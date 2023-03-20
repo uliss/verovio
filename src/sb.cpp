@@ -15,6 +15,7 @@
 
 #include "doc.h"
 #include "editorial.h"
+#include "functor.h"
 #include "functorparams.h"
 #include "measure.h"
 #include "page.h"
@@ -48,12 +49,32 @@ void Sb::Reset()
 // Sb functor methods
 //----------------------------------------------------------------------------
 
+FunctorCode Sb::Accept(MutableFunctor &functor)
+{
+    return functor.VisitSb(this);
+}
+
+FunctorCode Sb::Accept(ConstFunctor &functor) const
+{
+    return functor.VisitSb(this);
+}
+
+FunctorCode Sb::AcceptEnd(MutableFunctor &functor)
+{
+    return functor.VisitSbEnd(this);
+}
+
+FunctorCode Sb::AcceptEnd(ConstFunctor &functor) const
+{
+    return functor.VisitSbEnd(this);
+}
+
 int Sb::CastOffEncoding(FunctorParams *functorParams)
 {
     CastOffEncodingParams *params = vrv_params_cast<CastOffEncodingParams *>(functorParams);
     assert(params);
 
-    // We look if the current system has a least one measure - if yes, we assume that the <sb>
+    // We look if the current system has at least one measure - if yes, we assume that the <sb>
     // is not the one at the beginning of the content (<mdiv>). This is not very robust but at least make it
     // work when rendering a <mdiv> that does not start with a <pb> or a <sb> (which we cannot enforce)
     if (params->m_currentSystem->GetChildCount(MEASURE) > 0) {

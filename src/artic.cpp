@@ -17,6 +17,7 @@
 #include "doc.h"
 #include "elementpart.h"
 #include "floatingobject.h"
+#include "functor.h"
 #include "functorparams.h"
 #include "layer.h"
 #include "smufl.h"
@@ -115,7 +116,6 @@ void Artic::SplitMultival(Object *parent)
         artic->AttEnclosingChars::operator=(*this);
         artic->AttExtSym::operator=(*this);
         artic->AttPlacementRelEvent::operator=(*this);
-        artic->SetParent(parent);
         parent->InsertChild(artic, idx);
         idx++;
     }
@@ -144,7 +144,7 @@ void Artic::GetAllArtics(bool direction, std::vector<Artic *> &artics)
     ClassIdComparison matchType(ARTIC);
     ListOfObjects children;
     parentNoteOrChord->FindAllDescendantsBetween(&children, &matchType, first, last);
-    for (auto &child : children) {
+    for (Object *child : children) {
         if (child == this) continue;
         Artic *artic = vrv_cast<Artic *>(child);
         assert(artic);
@@ -260,8 +260,9 @@ char32_t Artic::GetArticGlyph(data_ARTICULATION artic, data_STAFFREL place) cons
             default: return 0;
         }
     }
-    else
+    else {
         return 0;
+    }
 }
 
 std::pair<char32_t, char32_t> Artic::GetEnclosingGlyphs() const
@@ -296,6 +297,7 @@ bool Artic::VerticalCorr(char32_t code, data_STAFFREL place)
         case SMUFL_E614_stringsHarmonic: return true;
         case SMUFL_E630_pluckedSnapPizzicatoBelow: return true;
         case SMUFL_E633_pluckedLeftHandPizzicato: return true;
+        case SMUFL_E638_pluckedDamp: return true;
         default: return false;
     }
 }
@@ -310,6 +312,26 @@ bool Artic::IsCentered(data_ARTICULATION artic)
 //----------------------------------------------------------------------------
 // Functor methods
 //----------------------------------------------------------------------------
+
+FunctorCode Artic::Accept(MutableFunctor &functor)
+{
+    return functor.VisitArtic(this);
+}
+
+FunctorCode Artic::Accept(ConstFunctor &functor) const
+{
+    return functor.VisitArtic(this);
+}
+
+FunctorCode Artic::AcceptEnd(MutableFunctor &functor)
+{
+    return functor.VisitArticEnd(this);
+}
+
+FunctorCode Artic::AcceptEnd(ConstFunctor &functor) const
+{
+    return functor.VisitArticEnd(this);
+}
 
 int Artic::ConvertMarkupArtic(FunctorParams *functorParams)
 {
@@ -394,7 +416,7 @@ int Artic::AdjustArtic(FunctorParams *functorParams)
     int yIn, yOut, yRel;
 
     Staff *staff = this->GetAncestorStaff(RESOLVE_CROSS_STAFF);
-    Beam *beam = dynamic_cast<Beam *>(this->GetFirstAncestor(BEAM));
+    Beam *beam = vrv_cast<Beam *>(this->GetFirstAncestor(BEAM));
     const int staffHeight
         = params->m_doc->GetDrawingDoubleUnit(staff->m_drawingStaffSize) * (staff->m_drawingLines - 1);
 
@@ -524,16 +546,6 @@ int Artic::ResetVerticalAlignment(FunctorParams *functorParams)
 
     m_startSlurPositioners.clear();
     m_endSlurPositioners.clear();
-
-    return FUNCTOR_CONTINUE;
-}
-
-int Artic::ResetData(FunctorParams *functorParams)
-{
-    // Call parent one too
-    LayerElement::ResetData(functorParams);
-
-    m_drawingPlace = STAFFREL_NONE;
 
     return FUNCTOR_CONTINUE;
 }

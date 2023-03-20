@@ -15,6 +15,7 @@
 
 #include "comparison.h"
 #include "doc.h"
+#include "functor.h"
 #include "functorparams.h"
 #include "horizontalaligner.h"
 #include "layer.h"
@@ -170,6 +171,26 @@ std::pair<bool, int> BarLine::GetPlace(const StaffDef *staffDef) const
 // Functors methods
 //----------------------------------------------------------------------------
 
+FunctorCode BarLine::Accept(MutableFunctor &functor)
+{
+    return functor.VisitBarLine(this);
+}
+
+FunctorCode BarLine::Accept(ConstFunctor &functor) const
+{
+    return functor.VisitBarLine(this);
+}
+
+FunctorCode BarLine::AcceptEnd(MutableFunctor &functor)
+{
+    return functor.VisitBarLineEnd(this);
+}
+
+FunctorCode BarLine::AcceptEnd(ConstFunctor &functor) const
+{
+    return functor.VisitBarLineEnd(this);
+}
+
 int BarLine::ConvertToCastOffMensural(FunctorParams *functorParams)
 {
     ConvertToCastOffMensuralParams *params = vrv_params_cast<ConvertToCastOffMensuralParams *>(functorParams);
@@ -207,7 +228,7 @@ int BarLine::ConvertToCastOffMensural(FunctorParams *functorParams)
     }
 
     // Make a segment break
-    // First case: new need to add a new measure segment (e.g, first pass)
+    // First case: new need to add a new measure segment (e.g., first pass)
     if (params->m_targetSubSystem->GetChildCount() <= params->m_segmentIdx) {
         params->m_targetMeasure = new Measure(convertToMeasured);
         if (convertToMeasured) {
@@ -233,7 +254,7 @@ int BarLine::ConvertToCastOffMensural(FunctorParams *functorParams)
 
         // Look if we already have the staff (e.g., with more than one layer)
         AttNIntegerComparison comparisonStaffN(STAFF, params->m_targetStaff->GetN());
-        Staff *staff = dynamic_cast<Staff *>(params->m_targetMeasure->FindDescendantByComparison(&comparisonStaffN));
+        Staff *staff = vrv_cast<Staff *>(params->m_targetMeasure->FindDescendantByComparison(&comparisonStaffN));
         if (!staff) {
             staff = new Staff(*params->m_targetStaff);
             staff->ClearChildren();
