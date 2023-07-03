@@ -21,7 +21,6 @@ class MidiFile;
 
 namespace vrv {
 
-class CastOffPagesParams;
 class DocSelection;
 class FontInfo;
 class Glyph;
@@ -254,6 +253,11 @@ public:
     bool ExportTimemap(std::string &output, bool includeRests, bool includeMeasures);
 
     /**
+     *  Extract expansionMap from the document to JSON string.
+     */
+    bool ExportExpansionMap(std::string &output);
+
+    /**
      * Extract music features to JSON string.
      */
     bool ExportFeatures(std::string &output, const std::string &options);
@@ -308,15 +312,6 @@ public:
      * @param smart - true to sometimes use encoded sb and pb.
      */
     void CastOffDocBase(bool useSb, bool usePb, bool smart = false);
-
-    /**
-     * Casts off the running elements (headers and footer)
-     * Called from Doc::CastOffDoc
-     * The doc needs to be empty, the methods adds two empty pages to calculate the
-     * size of the header and footer of the page one and two.
-     * Calcultated sizes are set in the CastOffPagesParams object.
-     */
-    void CastOffRunningElements(CastOffPagesParams *params);
 
     /**
      * Undo the cast off of the entire document.
@@ -465,9 +460,9 @@ public:
      * Interface for class functor visitation
      */
     ///@{
-    FunctorCode Accept(MutableFunctor &functor) override;
+    FunctorCode Accept(Functor &functor) override;
     FunctorCode Accept(ConstFunctor &functor) const override;
-    FunctorCode AcceptEnd(MutableFunctor &functor) override;
+    FunctorCode AcceptEnd(Functor &functor) override;
     FunctorCode AcceptEnd(ConstFunctor &functor) const override;
     ///@}
 

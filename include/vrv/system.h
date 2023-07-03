@@ -173,107 +173,11 @@ public:
      * Interface for class functor visitation
      */
     ///@{
-    FunctorCode Accept(MutableFunctor &functor) override;
+    FunctorCode Accept(Functor &functor) override;
     FunctorCode Accept(ConstFunctor &functor) const override;
-    FunctorCode AcceptEnd(MutableFunctor &functor) override;
+    FunctorCode AcceptEnd(Functor &functor) override;
     FunctorCode AcceptEnd(ConstFunctor &functor) const override;
     ///@}
-
-    /**
-     * See Object::ResetVerticalAlignment
-     */
-    int ResetVerticalAlignment(FunctorParams *functorParams) override;
-
-    /**
-     * See Object::ApplyPPUFactor
-     */
-    int ApplyPPUFactor(FunctorParams *functorParams) override;
-
-    /**
-     * @name See Object::AlignVertically
-     */
-    ///@{
-    int AlignVertically(FunctorParams *functorParams) override;
-    int AlignVerticallyEnd(FunctorParams *functorParams) override;
-    ///@}
-
-    /**
-     * See Object::AdjustYPos
-     */
-    int AdjustYPos(FunctorParams *functorParams) override;
-
-    /**
-     * See Object::AlignSystems
-     */
-    int AlignSystems(FunctorParams *functorParams) override;
-
-    /**
-     * See Object::JustifyX
-     */
-    int JustifyX(FunctorParams *functorParams) override;
-
-    /**
-     * See Object::JustifyY
-     */
-    int JustifyY(FunctorParams *functorParams) override;
-
-    /**
-     * See Object::AdjustCrossStaffYPos
-     */
-    int AdjustCrossStaffYPos(FunctorParams *functorParams) override;
-
-    /**
-     * See Object::AdjustStaffOverlap
-     */
-    int AdjustStaffOverlap(FunctorParams *functorParams) override;
-
-    /**
-     * See Object::AdjustFloatingPositioners
-     */
-    int AdjustFloatingPositioners(FunctorParams *functorParams) override;
-
-    /**
-     * See Object::AdjustFloatingPositionersBetween
-     */
-    int AdjustFloatingPositionersBetween(FunctorParams *functorParams) override;
-
-    /**
-     * See Object::AdjustSlurs
-     */
-    int AdjustSlurs(FunctorParams *functorParams) override;
-
-    /**
-     * See Object::CastOffPages
-     */
-    int CastOffPages(FunctorParams *functorParams) override;
-
-    /**
-     * @name See Object::CastOffSystems
-     */
-    ///@{
-    int CastOffSystems(FunctorParams *functorParams) override;
-    int CastOffSystemsEnd(FunctorParams *functorParams) override;
-    ///@}
-
-    /**
-     * See Object::CastOffEncoding
-     */
-    int CastOffEncoding(FunctorParams *functorParams) override;
-
-    /**
-     * See Object::CastOffToSelection
-     */
-    int CastOffToSelection(FunctorParams *) override;
-
-    /**
-     * See Object::UnCastOff
-     */
-    int UnCastOff(FunctorParams *functorParams) override;
-
-    /**
-     * See Object::Transpose
-     */
-    int Transpose(FunctorParams *functorParams) override;
 
 public:
     SystemAligner m_systemAligner;

@@ -33,6 +33,7 @@
 #include "pedal.h"
 #include "pitchinflection.h"
 #include "reh.h"
+#include "repeatmark.h"
 #include "slur.h"
 #include "staff.h"
 #include "tempo.h"
@@ -183,7 +184,7 @@ std::pair<int, bool> FloatingObject::GetVerticalContentBoundaryRel(const Doc *do
     return { boundary, false };
 }
 
-FunctorCode FloatingObject::Accept(MutableFunctor &functor)
+FunctorCode FloatingObject::Accept(Functor &functor)
 {
     return functor.VisitFloatingObject(this);
 }
@@ -193,7 +194,7 @@ FunctorCode FloatingObject::Accept(ConstFunctor &functor) const
     return functor.VisitFloatingObject(this);
 }
 
-FunctorCode FloatingObject::AcceptEnd(MutableFunctor &functor)
+FunctorCode FloatingObject::AcceptEnd(Functor &functor)
 {
     return functor.VisitFloatingObjectEnd(this);
 }
@@ -313,6 +314,13 @@ FloatingPositioner::FloatingPositioner(FloatingObject *object, StaffAlignment *a
         assert(reh);
         // reh above by default
         m_place = (reh->GetPlace() != STAFFREL_NONE) ? reh->GetPlace() : STAFFREL_above;
+    }
+    else if (object->Is(REPEATMARK)) {
+        RepeatMark *repeatMark = vrv_cast<RepeatMark *>(object);
+        assert(repeatMark);
+        // repeatMark above by default
+        m_place = (repeatMark->GetPlace() != STAFFREL_NONE) ? repeatMark->GetPlace()
+                                                            : repeatMark->GetLayerPlace(STAFFREL_above);
     }
     else if (object->Is(TEMPO)) {
         Tempo *tempo = vrv_cast<Tempo *>(object);
@@ -565,18 +573,8 @@ int FloatingPositioner::GetSpaceBelow(
 {
     if (m_place != STAFFREL_between) return VRV_UNSET;
 
-    int staffSize = staffAlignment->GetStaffSize();
-
-    const FloatingCurvePositioner *curve = dynamic_cast<const FloatingCurvePositioner *>(horizOverlappingBBox);
-    if (curve) {
-        assert(curve->m_object);
-    }
-    int margin = doc->GetBottomMargin(m_object->GetClassId()) * doc->GetDrawingUnit(staffSize);
-
-    if (curve && curve->m_object->Is({ LV, PHRASE, SLUR, TIE })) {
-        // For now ignore curves
-        return 0;
-    }
+    const int staffSize = staffAlignment->GetStaffSize();
+    const int margin = doc->GetBottomMargin(m_object->GetClassId()) * doc->GetDrawingUnit(staffSize);
 
     return this->GetContentBottom() - horizOverlappingBBox->GetSelfTop() - margin;
 }
@@ -822,7 +820,7 @@ std::pair<int, int> FloatingCurvePositioner::CalcDirectionalLeftRightAdjustment(
 
         // For selected types use the cut out boundary
         int boxTopY = boundingBox->GetTopBy(type);
-        if (boundingBox->Is(ACCID)) {
+        if (this->GetObject()->Is({ PHRASE, SLUR }) && boundingBox->Is(ACCID)) {
             const Resources *resources = vrv_cast<const Object *>(boundingBox)->GetDocResources();
             if (resources) {
                 boxTopY = boundingBox->GetCutOutTop(*resources);
@@ -859,7 +857,7 @@ std::pair<int, int> FloatingCurvePositioner::CalcDirectionalLeftRightAdjustment(
 
         // For selected types use the cut out boundary
         int boxBottomY = boundingBox->GetBottomBy(type);
-        if (boundingBox->Is(ACCID)) {
+        if (this->GetObject()->Is({ PHRASE, SLUR }) && boundingBox->Is(ACCID)) {
             const Resources *resources = vrv_cast<const Object *>(boundingBox)->GetDocResources();
             if (resources) {
                 boxBottomY = boundingBox->GetCutOutBottom(*resources);
@@ -915,25 +913,6 @@ std::pair<int, int> FloatingCurvePositioner::CalcRequestedStaffSpace(const Staff
     }
 
     return { 0, 0 };
-}
-
-//----------------------------------------------------------------------------
-// FloatingObject functor methods
-//----------------------------------------------------------------------------
-
-int FloatingObject::ResetVerticalAlignment(FunctorParams *functorParams)
-{
-    m_currentPositioner = NULL;
-    m_maxDrawingYRel = VRV_UNSET;
-
-    return FUNCTOR_CONTINUE;
-}
-
-int FloatingObject::UnCastOff(FunctorParams *functorParams)
-{
-    m_currentPositioner = NULL;
-
-    return FUNCTOR_CONTINUE;
 }
 
 } // namespace vrv

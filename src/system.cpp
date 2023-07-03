@@ -15,15 +15,17 @@
 
 #include "beamspan.h"
 #include "comparison.h"
+#include "convertfunctor.h"
 #include "dir.h"
+#include "div.h"
 #include "doc.h"
 #include "dynam.h"
 #include "ending.h"
 #include "findfunctor.h"
 #include "findlayerelementsfunctor.h"
-#include "functorparams.h"
 #include "layer.h"
 #include "measure.h"
+#include "miscfunctor.h"
 #include "page.h"
 #include "pages.h"
 #include "pedal.h"
@@ -94,6 +96,9 @@ bool System::IsSupportedChild(Object *child)
     }
     else if (child->IsSystemElement()) {
         assert(dynamic_cast<SystemElement *>(child));
+    }
+    else if (child->Is(DIV)) {
+        assert(dynamic_cast<Div *>(child));
     }
     else if (child->IsEditorialElement()) {
         assert(dynamic_cast<EditorialElement *>(child));
@@ -430,57 +435,51 @@ void System::ConvertToCastOffMensuralSystem(Doc *doc, System *targetSystem)
     assert(targetSystem);
 
     // We need to populate processing lists for processing the document by Layer
-    InitProcessingListsParams initProcessingListsParams;
-    Functor initProcessingLists(&Object::InitProcessingLists);
-    this->Process(&initProcessingLists, &initProcessingListsParams);
+    InitProcessingListsFunctor initProcessingLists;
+    this->Process(initProcessingLists);
+    const IntTree &layerTree = initProcessingLists.GetLayerTree();
 
-    // The means no content? Checking just in case
-    if (initProcessingListsParams.m_layerTree.child.empty()) return;
+    // Checking just in case
+    if (layerTree.child.empty()) return;
 
-    ConvertToCastOffMensuralParams convertToCastOffMensuralParams(
-        doc, targetSystem, &initProcessingListsParams.m_layerTree);
+    ConvertToCastOffMensuralFunctor convertToCastOffMensural(doc, targetSystem, &layerTree);
     // Store the list of staff N for detecting barLines that are on all systems
-    for (auto const &staves : initProcessingListsParams.m_layerTree.child) {
-        convertToCastOffMensuralParams.m_staffNs.push_back(staves.first);
+    for (const auto &staves : layerTree.child) {
+        convertToCastOffMensural.AddStaffN(staves.first);
     }
-
-    Functor convertToCastOffMensural(&Object::ConvertToCastOffMensural);
-    this->Process(&convertToCastOffMensural, &convertToCastOffMensuralParams);
+    this->Process(convertToCastOffMensural);
 }
 
 void System::ConvertToUnCastOffMensuralSystem()
 {
     // We need to populate processing lists for processing the document by Layer
-    InitProcessingListsParams initProcessingListsParams;
-    Functor initProcessingLists(&Object::InitProcessingLists);
-    this->Process(&initProcessingLists, &initProcessingListsParams);
+    InitProcessingListsFunctor initProcessingLists;
+    this->Process(initProcessingLists);
+    const IntTree &layerTree = initProcessingLists.GetLayerTree();
 
-    // The means no content? Checking just in case
-    if (initProcessingListsParams.m_layerTree.child.empty()) return;
-
-    ConvertToUnCastOffMensuralParams convertToUnCastOffMensuralParams;
+    // Checking just in case
+    if (layerTree.child.empty()) return;
 
     Filters filters;
+    ConvertToUnCastOffMensuralFunctor convertToUnCastOffMensural;
+    convertToUnCastOffMensural.PushFilters(&filters);
+
     // Now we can process by layer and move their content to (measure) segments
-    for (auto const &staves : initProcessingListsParams.m_layerTree.child) {
-        for (auto const &layers : staves.second.child) {
+    for (const auto &staves : layerTree.child) {
+        for (const auto &layers : staves.second.child) {
             // Create ad comparison object for each type / @n
             AttNIntegerComparison matchStaff(STAFF, staves.first);
             AttNIntegerComparison matchLayer(LAYER, layers.first);
             filters = { &matchStaff, &matchLayer };
 
-            convertToUnCastOffMensuralParams.m_contentMeasure = NULL;
-            convertToUnCastOffMensuralParams.m_contentLayer = NULL;
-
-            Functor convertToUnCastOffMensural(&Object::ConvertToUnCastOffMensural);
-            this->Process(&convertToUnCastOffMensural, &convertToUnCastOffMensuralParams, NULL, &filters);
-
-            convertToUnCastOffMensuralParams.m_addSegmentsToDelete = false;
+            convertToUnCastOffMensural.ResetContent();
+            this->Process(convertToUnCastOffMensural);
+            convertToUnCastOffMensural.TrackSegmentsToDelete(false);
         }
     }
 
     // Detach the contentPage
-    for (auto &measure : convertToUnCastOffMensuralParams.m_segmentsToDelete) {
+    for (Object *measure : convertToUnCastOffMensural.GetSegmentsToDelete()) {
         this->DeleteChild(measure);
     }
 }
@@ -489,7 +488,7 @@ void System::ConvertToUnCastOffMensuralSystem()
 // System functor methods
 //----------------------------------------------------------------------------
 
-FunctorCode System::Accept(MutableFunctor &functor)
+FunctorCode System::Accept(Functor &functor)
 {
     return functor.VisitSystem(this);
 }
@@ -499,7 +498,7 @@ FunctorCode System::Accept(ConstFunctor &functor) const
     return functor.VisitSystem(this);
 }
 
-FunctorCode System::AcceptEnd(MutableFunctor &functor)
+FunctorCode System::AcceptEnd(Functor &functor)
 {
     return functor.VisitSystemEnd(this);
 }
@@ -507,492 +506,6 @@ FunctorCode System::AcceptEnd(MutableFunctor &functor)
 FunctorCode System::AcceptEnd(ConstFunctor &functor) const
 {
     return functor.VisitSystemEnd(this);
-}
-
-int System::ResetVerticalAlignment(FunctorParams *functorParams)
-{
-    this->SetDrawingYRel(0);
-
-    m_systemAligner.Reset();
-
-    return FUNCTOR_CONTINUE;
-}
-
-int System::ApplyPPUFactor(FunctorParams *functorParams)
-{
-    ApplyPPUFactorParams *params = vrv_params_cast<ApplyPPUFactorParams *>(functorParams);
-    assert(params);
-
-    if (m_xAbs != VRV_UNSET) m_xAbs /= params->m_page->GetPPUFactor();
-    if (m_yAbs != VRV_UNSET) m_yAbs /= params->m_page->GetPPUFactor();
-    m_systemLeftMar *= params->m_page->GetPPUFactor();
-    m_systemRightMar *= params->m_page->GetPPUFactor();
-
-    return FUNCTOR_CONTINUE;
-}
-
-int System::AlignVertically(FunctorParams *functorParams)
-{
-    AlignVerticallyParams *params = vrv_params_cast<AlignVerticallyParams *>(functorParams);
-    assert(params);
-
-    params->m_systemAligner = &m_systemAligner;
-
-    return FUNCTOR_CONTINUE;
-}
-
-int System::AlignVerticallyEnd(FunctorParams *functorParams)
-{
-    AlignVerticallyParams *params = vrv_params_cast<AlignVerticallyParams *>(functorParams);
-    assert(params);
-
-    params->m_cumulatedShift = 0;
-    params->m_staffIdx = 0;
-
-    m_systemAligner.Process(params->m_functorEnd, params);
-
-    return FUNCTOR_SIBLINGS;
-}
-
-int System::AdjustYPos(FunctorParams *functorParams)
-{
-    AdjustYPosParams *params = vrv_params_cast<AdjustYPosParams *>(functorParams);
-    assert(params);
-
-    // We need to call this explicitly because changing the YRel of the StaffAligner (below in the functor)
-    // will not trigger it
-    this->ResetCachedDrawingY();
-
-    params->m_cumulatedShift = 0;
-
-    m_systemAligner.Process(params->m_functor, params);
-
-    return FUNCTOR_SIBLINGS;
-}
-
-int System::AlignSystems(FunctorParams *functorParams)
-{
-    AlignSystemsParams *params = vrv_params_cast<AlignSystemsParams *>(functorParams);
-    assert(params);
-    assert(m_systemAligner.GetBottomAlignment());
-
-    // No spacing for the first system
-    int systemSpacing = this->IsFirstInPage() ? 0 : params->m_systemSpacing;
-    if (systemSpacing) {
-        const int contentOverflow = params->m_prevBottomOverflow + m_systemAligner.GetOverflowAbove(params->m_doc);
-        const int clefOverflow
-            = params->m_prevBottomClefOverflow + m_systemAligner.GetOverflowAbove(params->m_doc, true);
-        // Alignment is already pre-determined with staff alignment overflow
-        // We need to subtract them from the desired spacing
-        const int actualSpacing = systemSpacing - std::max(contentOverflow, clefOverflow);
-        // Ensure minimal white space between consecutive systems by adding one staff space
-        const int unit = params->m_doc->GetDrawingUnit(100);
-        params->m_shift -= std::max(actualSpacing, 2 * unit);
-    }
-
-    this->SetDrawingYRel(params->m_shift);
-
-    params->m_shift += m_systemAligner.GetBottomAlignment()->GetYRel();
-
-    params->m_justificationSum += m_systemAligner.GetJustificationSum(params->m_doc);
-    if (this->IsFirstInPage()) {
-        // remove extra system justification factor to get exactly (systemsCount-1)*justificationSystem
-        params->m_justificationSum -= params->m_doc->GetOptions()->m_justificationSystem.GetValue();
-    }
-
-    params->m_prevBottomOverflow = m_systemAligner.GetOverflowBelow(params->m_doc);
-    params->m_prevBottomClefOverflow = m_systemAligner.GetOverflowBelow(params->m_doc, true);
-
-    return FUNCTOR_SIBLINGS;
-}
-
-int System::JustifyX(FunctorParams *functorParams)
-{
-    JustifyXParams *params = vrv_params_cast<JustifyXParams *>(functorParams);
-    assert(params);
-
-    params->m_measureXRel = 0;
-    int margins = m_systemLeftMar + m_systemRightMar;
-    int nonJustifiableWidth
-        = margins + (m_drawingTotalWidth - m_drawingJustifiableWidth); // m_drawingTotalWidth includes the labels
-    params->m_justifiableRatio
-        = (double)(params->m_systemFullWidth - nonJustifiableWidth) / ((double)m_drawingJustifiableWidth);
-
-    if (params->m_justifiableRatio < 0.8) {
-        // Arbitrary value for avoiding over-compressed justification
-        LogWarning("Justification is highly compressed (ratio smaller than 0.8: %lf)", params->m_justifiableRatio);
-        LogWarning("\tSystem full width: %d", params->m_systemFullWidth);
-        LogWarning("\tNon-justifiable width: %d", nonJustifiableWidth);
-        LogWarning("\tDrawing justifiable width: %d", m_drawingJustifiableWidth);
-    }
-
-    // Check if we are on the last system of an mdiv.
-    // Do not justify it if the non-justified width is less than a specified percent.
-    if (this->IsLastOfMdiv() || this->IsLastOfSelection()) {
-        double minLastJust = params->m_doc->GetOptions()->m_minLastJustification.GetValue();
-        if ((minLastJust > 0) && (params->m_justifiableRatio > (1 / minLastJust))) {
-            return FUNCTOR_SIBLINGS;
-        }
-    }
-
-    return FUNCTOR_CONTINUE;
-}
-
-int System::JustifyY(FunctorParams *functorParams)
-{
-    JustifyYParams *params = vrv_params_cast<JustifyYParams *>(functorParams);
-    assert(params);
-    if (params->m_justificationSum <= 0.0) return FUNCTOR_STOP;
-    if (params->m_spaceToDistribute <= 0) return FUNCTOR_STOP;
-
-    const double systemJustificationFactor = params->m_doc->GetOptions()->m_justificationSystem.GetValue();
-    const double shift = systemJustificationFactor / params->m_justificationSum * params->m_spaceToDistribute;
-
-    if (!this->IsFirstInPage()) {
-        params->m_cumulatedShift += shift;
-    }
-
-    this->SetDrawingYRel(this->GetDrawingY() - params->m_cumulatedShift);
-
-    params->m_relativeShift = 0;
-    m_systemAligner.Process(params->m_functor, params);
-
-    return FUNCTOR_SIBLINGS;
-}
-
-int System::AdjustCrossStaffYPos(FunctorParams *functorParams)
-{
-    FunctorDocParams *params = vrv_params_cast<FunctorDocParams *>(functorParams);
-    assert(params);
-
-    for (auto &item : m_drawingList) {
-        if (item->Is(BEAMSPAN)) {
-            // Here we could check that the beamSpan is actually cross-staff. Otherwise doing this is pointless
-            BeamSpan *beamSpan = vrv_cast<BeamSpan *>(item);
-            assert(beamSpan);
-            BeamSpanSegment *segment = beamSpan->GetSegmentForSystem(this);
-            if (segment)
-                segment->CalcBeam(
-                    segment->GetLayer(), segment->GetStaff(), params->m_doc, beamSpan, beamSpan->m_drawingPlace);
-        }
-    }
-
-    return FUNCTOR_CONTINUE;
-}
-
-int System::AdjustStaffOverlap(FunctorParams *functorParams)
-{
-    AdjustStaffOverlapParams *params = vrv_params_cast<AdjustStaffOverlapParams *>(functorParams);
-    assert(params);
-
-    params->m_previous = NULL;
-    m_systemAligner.Process(params->m_functor, params);
-
-    return FUNCTOR_SIBLINGS;
-}
-
-int System::AdjustFloatingPositioners(FunctorParams *functorParams)
-{
-    AdjustFloatingPositionersParams *params = vrv_params_cast<AdjustFloatingPositionersParams *>(functorParams);
-    assert(params);
-
-    params->m_inBetween = false;
-
-    AdjustFloatingPositionerGrpsParams adjustFloatingPositionerGrpsParams(params->m_doc);
-    Functor adjustFloatingPositionerGrps(&Object::AdjustFloatingPositionerGrps);
-
-    params->m_classId = LV;
-    m_systemAligner.Process(params->m_functor, params);
-
-    params->m_classId = TIE;
-    m_systemAligner.Process(params->m_functor, params);
-
-    params->m_classId = SLUR;
-    m_systemAligner.Process(params->m_functor, params);
-
-    params->m_classId = PHRASE;
-    m_systemAligner.Process(params->m_functor, params);
-
-    params->m_classId = MORDENT;
-    m_systemAligner.Process(params->m_functor, params);
-
-    params->m_classId = TURN;
-    m_systemAligner.Process(params->m_functor, params);
-
-    params->m_classId = TRILL;
-    m_systemAligner.Process(params->m_functor, params);
-
-    params->m_classId = ORNAM;
-    m_systemAligner.Process(params->m_functor, params);
-
-    params->m_classId = FING;
-    m_systemAligner.Process(params->m_functor, params);
-
-    params->m_classId = DYNAM;
-    m_systemAligner.Process(params->m_functor, params);
-
-    params->m_classId = HAIRPIN;
-    m_systemAligner.Process(params->m_functor, params);
-
-    adjustFloatingPositionerGrpsParams.m_classIds.clear();
-    adjustFloatingPositionerGrpsParams.m_classIds.push_back(DYNAM);
-    adjustFloatingPositionerGrpsParams.m_classIds.push_back(HAIRPIN);
-    adjustFloatingPositionerGrpsParams.m_place = STAFFREL_above;
-    m_systemAligner.Process(&adjustFloatingPositionerGrps, &adjustFloatingPositionerGrpsParams);
-    adjustFloatingPositionerGrpsParams.m_place = STAFFREL_below;
-    m_systemAligner.Process(&adjustFloatingPositionerGrps, &adjustFloatingPositionerGrpsParams);
-
-    params->m_classId = BRACKETSPAN;
-    m_systemAligner.Process(params->m_functor, params);
-
-    params->m_classId = OCTAVE;
-    m_systemAligner.Process(params->m_functor, params);
-
-    params->m_classId = BREATH;
-    m_systemAligner.Process(params->m_functor, params);
-
-    params->m_classId = FERMATA;
-    m_systemAligner.Process(params->m_functor, params);
-
-    params->m_classId = DIR;
-    m_systemAligner.Process(params->m_functor, params);
-
-    adjustFloatingPositionerGrpsParams.m_classIds.clear();
-    adjustFloatingPositionerGrpsParams.m_classIds.push_back(DIR);
-    adjustFloatingPositionerGrpsParams.m_place = STAFFREL_above;
-    m_systemAligner.Process(&adjustFloatingPositionerGrps, &adjustFloatingPositionerGrpsParams);
-    adjustFloatingPositionerGrpsParams.m_place = STAFFREL_below;
-    m_systemAligner.Process(&adjustFloatingPositionerGrps, &adjustFloatingPositionerGrpsParams);
-
-    params->m_classId = TEMPO;
-    m_systemAligner.Process(params->m_functor, params);
-
-    params->m_classId = PEDAL;
-    m_systemAligner.Process(params->m_functor, params);
-
-    adjustFloatingPositionerGrpsParams.m_classIds.clear();
-    adjustFloatingPositionerGrpsParams.m_classIds.push_back(PEDAL);
-    adjustFloatingPositionerGrpsParams.m_place = STAFFREL_above;
-    m_systemAligner.Process(&adjustFloatingPositionerGrps, &adjustFloatingPositionerGrpsParams);
-    adjustFloatingPositionerGrpsParams.m_place = STAFFREL_below;
-    m_systemAligner.Process(&adjustFloatingPositionerGrps, &adjustFloatingPositionerGrpsParams);
-
-    params->m_classId = HARM;
-    m_systemAligner.Process(params->m_functor, params);
-
-    adjustFloatingPositionerGrpsParams.m_classIds.clear();
-    adjustFloatingPositionerGrpsParams.m_classIds.push_back(HARM);
-    adjustFloatingPositionerGrpsParams.m_place = STAFFREL_above;
-    m_systemAligner.Process(&adjustFloatingPositionerGrps, &adjustFloatingPositionerGrpsParams);
-    adjustFloatingPositionerGrpsParams.m_place = STAFFREL_below;
-    m_systemAligner.Process(&adjustFloatingPositionerGrps, &adjustFloatingPositionerGrpsParams);
-
-    params->m_classId = ENDING;
-    m_systemAligner.Process(params->m_functor, params);
-
-    adjustFloatingPositionerGrpsParams.m_classIds.clear();
-    adjustFloatingPositionerGrpsParams.m_classIds.push_back(ENDING);
-    adjustFloatingPositionerGrpsParams.m_place = STAFFREL_above;
-    m_systemAligner.Process(&adjustFloatingPositionerGrps, &adjustFloatingPositionerGrpsParams);
-    adjustFloatingPositionerGrpsParams.m_place = STAFFREL_below;
-    m_systemAligner.Process(&adjustFloatingPositionerGrps, &adjustFloatingPositionerGrpsParams);
-
-    params->m_classId = REH;
-    m_systemAligner.Process(params->m_functor, params);
-
-    params->m_classId = CAESURA;
-    m_systemAligner.Process(params->m_functor, params);
-
-    // SYL check if they are some lyrics and make space for them if any
-    params->m_classId = SYL;
-    m_systemAligner.Process(params->m_functor, params);
-
-    /**** Process elements that needs to be put in between ****/
-
-    params->m_inBetween = true;
-    // All of them with no particular processing order.
-    // The resulting layout order will correspond to the order in the encoding.
-    params->m_classId = OBJECT;
-    m_systemAligner.Process(params->m_functor, params);
-
-    adjustFloatingPositionerGrpsParams.m_classIds.clear();
-    adjustFloatingPositionerGrpsParams.m_classIds.push_back(DYNAM);
-    adjustFloatingPositionerGrpsParams.m_place = STAFFREL_between;
-    m_systemAligner.Process(&adjustFloatingPositionerGrps, &adjustFloatingPositionerGrpsParams);
-
-    return FUNCTOR_SIBLINGS;
-}
-
-int System::AdjustFloatingPositionersBetween(FunctorParams *functorParams)
-{
-    AdjustFloatingPositionersBetweenParams *params
-        = vrv_params_cast<AdjustFloatingPositionersBetweenParams *>(functorParams);
-    assert(params);
-
-    params->m_previousStaffPositioners = NULL;
-    params->m_previousStaffAlignment = NULL;
-    m_systemAligner.Process(params->m_functor, params);
-
-    return FUNCTOR_SIBLINGS;
-}
-
-int System::AdjustSlurs(FunctorParams *functorParams)
-{
-    AdjustSlursParams *params = vrv_params_cast<AdjustSlursParams *>(functorParams);
-    assert(params);
-
-    m_systemAligner.Process(params->m_functor, params);
-
-    return FUNCTOR_SIBLINGS;
-}
-
-int System::CastOffPages(FunctorParams *functorParams)
-{
-    CastOffPagesParams *params = vrv_params_cast<CastOffPagesParams *>(functorParams);
-    assert(params);
-
-    int currentShift = params->m_shift;
-    // We use params->m_pageHeadHeight to check if we have passed the first page already
-    if (params->m_pgHeadHeight != VRV_UNSET) {
-        currentShift += params->m_pgHeadHeight + params->m_pgFootHeight;
-    }
-    else {
-        currentShift += params->m_pgHead2Height + params->m_pgFoot2Height;
-    }
-
-    const int systemMaxPerPage = params->m_doc->GetOptions()->m_systemMaxPerPage.GetValue();
-    const int childCount = params->m_currentPage->GetChildCount();
-    if ((systemMaxPerPage && systemMaxPerPage == childCount)
-        || (childCount > 0 && (this->m_drawingYRel - this->GetHeight() - currentShift < 0))) {
-        // If this is the last system in the list, it doesn't fit the page and it's leftover system (has just one
-        // measure) => add the system content to the previous system
-        Object *nextSystem = params->m_contentPage->GetNext(this, SYSTEM);
-        Object *lastSystem = params->m_currentPage->GetLast(SYSTEM);
-        if (!nextSystem && lastSystem && (this == params->m_leftoverSystem)) {
-            ArrayOfObjects &children = this->GetChildrenForModification();
-            for (Object *child : children) {
-                child->MoveItselfTo(lastSystem);
-            }
-            return FUNCTOR_SIBLINGS;
-        }
-
-        params->m_currentPage = new Page();
-        // Use VRV_UNSET value as a flag
-        params->m_pgHeadHeight = VRV_UNSET;
-        assert(params->m_doc->GetPages());
-        params->m_doc->GetPages()->AddChild(params->m_currentPage);
-        params->m_shift = this->m_drawingYRel - params->m_pageHeight;
-    }
-
-    // First add all pending objects
-    ArrayOfObjects::iterator iter;
-    for (iter = params->m_pendingPageElements.begin(); iter != params->m_pendingPageElements.end(); ++iter) {
-        params->m_currentPage->AddChild(*iter);
-    }
-    params->m_pendingPageElements.clear();
-
-    // Special case where we use the Relinquish method.
-    // We want to move the system to the currentPage. However, we cannot use DetachChild
-    // from the contentPage because this screws up the iterator. Relinquish gives up
-    // the ownership of the system - the contentPage itself will be deleted afterwards.
-    System *system = vrv_cast<System *>(params->m_contentPage->Relinquish(this->GetIdx()));
-    assert(system);
-    params->m_currentPage->AddChild(system);
-
-    return FUNCTOR_SIBLINGS;
-}
-
-int System::CastOffSystems(FunctorParams *functorParams)
-{
-    CastOffSystemsParams *params = vrv_params_cast<CastOffSystemsParams *>(functorParams);
-    assert(params);
-
-    // We are starting a new system we need to cast off
-    params->m_contentSystem = this;
-    // We also need to create a new target system and add it to the page
-    System *system = new System();
-    params->m_page->AddChild(system);
-    params->m_currentSystem = system;
-
-    params->m_shift = -this->GetDrawingLabelsWidth();
-    params->m_currentScoreDefWidth
-        = params->m_page->m_drawingScoreDef.GetDrawingWidth() + this->GetDrawingAbbrLabelsWidth();
-
-    return FUNCTOR_CONTINUE;
-}
-
-int System::CastOffSystemsEnd(FunctorParams *functorParams)
-{
-    CastOffSystemsParams *params = vrv_params_cast<CastOffSystemsParams *>(functorParams);
-    assert(params);
-
-    if (params->m_pendingElements.empty()) return FUNCTOR_CONTINUE;
-
-    // Otherwise add all pendings objects
-    ArrayOfObjects::iterator iter;
-    for (iter = params->m_pendingElements.begin(); iter != params->m_pendingElements.end(); ++iter) {
-        params->m_currentSystem->AddChild(*iter);
-    }
-
-    return FUNCTOR_CONTINUE;
-}
-
-int System::CastOffEncoding(FunctorParams *functorParams)
-{
-    CastOffEncodingParams *params = vrv_params_cast<CastOffEncodingParams *>(functorParams);
-    assert(params);
-
-    // We are starting a new system we need to cast off
-    params->m_contentSystem = this;
-    // Create the new system but do not add it to the page yet.
-    // It will be added when reaching a pb / sb or at the end of the score in PageMilestoneEnd::CastOffEncoding
-    assert(!params->m_currentSystem);
-    params->m_currentSystem = new System();
-
-    return FUNCTOR_CONTINUE;
-}
-
-int System::CastOffToSelection(FunctorParams *functorParams)
-{
-    CastOffToSelectionParams *params = vrv_params_cast<CastOffToSelectionParams *>(functorParams);
-    assert(params);
-
-    // We are starting a new system we need to cast off
-    params->m_contentSystem = this;
-    // We also need to create a new target system and add it to the page
-    System *system = new System();
-    params->m_page->AddChild(system);
-    params->m_currentSystem = system;
-
-    return FUNCTOR_CONTINUE;
-}
-
-int System::UnCastOff(FunctorParams *functorParams)
-{
-    UnCastOffParams *params = vrv_params_cast<UnCastOffParams *>(functorParams);
-    assert(params);
-
-    // Just move all the content of the system to the continuous one (parameter)
-    // Use the MoveChildrenFrom method that moves and relinquishes them
-    // See Object::Relinquish
-    params->m_currentSystem->MoveChildrenFrom(this);
-
-    return FUNCTOR_CONTINUE;
-}
-
-int System::Transpose(FunctorParams *functorParams)
-{
-    TransposeParams *params = vrv_params_cast<TransposeParams *>(functorParams);
-    assert(params);
-
-    // Check whether we are in the selected mdiv
-    if (!params->m_selectedMdivID.empty()
-        && (std::find(params->m_currentMdivIDs.begin(), params->m_currentMdivIDs.end(), params->m_selectedMdivID)
-            == params->m_currentMdivIDs.end())) {
-        return FUNCTOR_SIBLINGS;
-    }
-
-    return FUNCTOR_CONTINUE;
 }
 
 } // namespace vrv

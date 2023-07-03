@@ -17,7 +17,6 @@
 #include "chord.h"
 #include "doc.h"
 #include "functor.h"
-#include "functorparams.h"
 #include "layer.h"
 #include "note.h"
 #include "smufl.h"
@@ -181,7 +180,7 @@ int TupletBracket::GetDrawingYLeft() const
             + m_drawingYRelLeft;
     }
     else {
-        return this->GetDrawingY();
+        return this->GetDrawingY() + m_drawingYRelLeft;
     }
 }
 
@@ -199,7 +198,7 @@ int TupletBracket::GetDrawingYRight() const
             + m_drawingYRelRight;
     }
     else {
-        return this->GetDrawingY();
+        return this->GetDrawingY() + m_drawingYRelRight;
     }
 }
 
@@ -276,7 +275,7 @@ void TupletNum::SetAlignedBracket(TupletBracket *alignedBracket)
 // Functors methods
 //----------------------------------------------------------------------------
 
-FunctorCode Dots::Accept(MutableFunctor &functor)
+FunctorCode Dots::Accept(Functor &functor)
 {
     return functor.VisitDots(this);
 }
@@ -286,7 +285,7 @@ FunctorCode Dots::Accept(ConstFunctor &functor) const
     return functor.VisitDots(this);
 }
 
-FunctorCode Dots::AcceptEnd(MutableFunctor &functor)
+FunctorCode Dots::AcceptEnd(Functor &functor)
 {
     return functor.VisitDotsEnd(this);
 }
@@ -296,7 +295,7 @@ FunctorCode Dots::AcceptEnd(ConstFunctor &functor) const
     return functor.VisitDotsEnd(this);
 }
 
-FunctorCode Flag::Accept(MutableFunctor &functor)
+FunctorCode Flag::Accept(Functor &functor)
 {
     return functor.VisitFlag(this);
 }
@@ -306,7 +305,7 @@ FunctorCode Flag::Accept(ConstFunctor &functor) const
     return functor.VisitFlag(this);
 }
 
-FunctorCode Flag::AcceptEnd(MutableFunctor &functor)
+FunctorCode Flag::AcceptEnd(Functor &functor)
 {
     return functor.VisitFlagEnd(this);
 }
@@ -316,7 +315,7 @@ FunctorCode Flag::AcceptEnd(ConstFunctor &functor) const
     return functor.VisitFlagEnd(this);
 }
 
-FunctorCode TupletBracket::Accept(MutableFunctor &functor)
+FunctorCode TupletBracket::Accept(Functor &functor)
 {
     return functor.VisitTupletBracket(this);
 }
@@ -326,7 +325,7 @@ FunctorCode TupletBracket::Accept(ConstFunctor &functor) const
     return functor.VisitTupletBracket(this);
 }
 
-FunctorCode TupletBracket::AcceptEnd(MutableFunctor &functor)
+FunctorCode TupletBracket::AcceptEnd(Functor &functor)
 {
     return functor.VisitTupletBracketEnd(this);
 }
@@ -336,18 +335,7 @@ FunctorCode TupletBracket::AcceptEnd(ConstFunctor &functor) const
     return functor.VisitTupletBracketEnd(this);
 }
 
-int TupletBracket::ResetVerticalAlignment(FunctorParams *functorParams)
-{
-    // Call parent one too
-    LayerElement::ResetVerticalAlignment(functorParams);
-
-    m_drawingYRelLeft = 0;
-    m_drawingYRelRight = 0;
-
-    return FUNCTOR_CONTINUE;
-}
-
-FunctorCode TupletNum::Accept(MutableFunctor &functor)
+FunctorCode TupletNum::Accept(Functor &functor)
 {
     return functor.VisitTupletNum(this);
 }
@@ -357,7 +345,7 @@ FunctorCode TupletNum::Accept(ConstFunctor &functor) const
     return functor.VisitTupletNum(this);
 }
 
-FunctorCode TupletNum::AcceptEnd(MutableFunctor &functor)
+FunctorCode TupletNum::AcceptEnd(Functor &functor)
 {
     return functor.VisitTupletNumEnd(this);
 }
@@ -365,14 +353,6 @@ FunctorCode TupletNum::AcceptEnd(MutableFunctor &functor)
 FunctorCode TupletNum::AcceptEnd(ConstFunctor &functor) const
 {
     return functor.VisitTupletNumEnd(this);
-}
-
-int TupletNum::ResetVerticalAlignment(FunctorParams *functorParams)
-{
-    // Call parent one too
-    LayerElement::ResetVerticalAlignment(functorParams);
-
-    return FUNCTOR_CONTINUE;
 }
 
 } // namespace vrv

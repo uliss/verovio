@@ -33,7 +33,6 @@
 #include "elementpart.h"
 #include "ftrem.h"
 #include "functor.h"
-#include "functorparams.h"
 #include "horizontalaligner.h"
 #include "keysig.h"
 #include "layer.h"
@@ -57,6 +56,7 @@
 #include "staff.h"
 #include "stem.h"
 #include "syl.h"
+#include "syllable.h"
 #include "tabgrp.h"
 #include "tie.h"
 #include "timeinterface.h"
@@ -70,6 +70,13 @@
 #include "zone.h"
 
 namespace vrv {
+
+// Large spacing between syllables is a quarter note space
+// MAX_DURATION / pow(2.0, (DUR_4 - 2.0))
+#define NEUME_LARGE_SPACE 256
+// Small spacing between neume components is a 16th note space
+// MAX_DURATION / pow(2.0, (DUR_6 - 2.0))
+#define NEUME_SMALL_SPACE 64
 
 //----------------------------------------------------------------------------
 // LayerElement
@@ -615,7 +622,7 @@ int LayerElement::GetDrawingRadius(const Doc *doc, bool isInLigature) const
 {
     assert(doc);
 
-    if (!this->Is({ CHORD, NOTE, REST })) return 0;
+    if (!this->Is({ CHORD, NC, NOTE, REST })) return 0;
 
     char32_t code = 0;
     int dur = DUR_4;
@@ -651,7 +658,7 @@ int LayerElement::GetDrawingRadius(const Doc *doc, bool isInLigature) const
             code = SMUFL_E0A4_noteheadBlack;
         }
     }
-    else if (this->Is(REST)) {
+    else if (this->Is({ REST, NC })) {
         code = SMUFL_E0A4_noteheadBlack;
     }
 
@@ -708,12 +715,16 @@ double LayerElement::GetAlignmentDuration(
             return duration->GetInterfaceAlignmentMensuralDuration(num, numbase, mensur);
         }
         if (this->Is(NC)) {
-            const Neume *neume = vrv_cast<const Neume *>(this->GetFirstAncestor(NEUME));
-            if (neume->IsLastInNeume(this)) {
-                return 128;
+            const Object *neume = this->GetFirstAncestor(NEUME);
+            assert(neume);
+            const Object *syllable = neume->GetFirstAncestor(SYLLABLE);
+            assert(syllable);
+            // Add a gap after the last nc of the last neume in the syllable
+            if ((neume->GetLast() == this) && (syllable->GetLast() == neume)) {
+                return NEUME_LARGE_SPACE;
             }
             else {
-                return 16;
+                return NEUME_SMALL_SPACE;
             }
         }
         double durationValue = duration->GetInterfaceAlignmentDuration(num, numbase);
@@ -1001,7 +1012,7 @@ int LayerElement::CalcLayerOverlap(const Doc *doc, int direction, int y1, int y2
             const int currentTop = this->GetDrawingTop(doc, staff->m_drawingStaffSize);
             if (currentTop <= elementBottom) continue;
             const StemmedDrawingInterface *stemInterface = layerElement->GetStemmedDrawingInterface();
-            if (sameDirElement || (stemInterface && (stemInterface->GetDrawingStemDir() == STEMDIRECTION_down))) {
+            if (stemInterface && (sameDirElement || (stemInterface->GetDrawingStemDir() == STEMDIRECTION_down))) {
                 if (currentTop - stemInterface->GetDrawingStemLen() > currentTop) continue;
                 leftMargin = unit + y1 - elementTop;
                 rightMargin = unit + y2 - elementTop;
@@ -1083,7 +1094,7 @@ int LayerElement::GetCollisionCount(const MapOfDotLocs &dotLocs1, const MapOfDot
 // LayerElement functor methods
 //----------------------------------------------------------------------------
 
-FunctorCode LayerElement::Accept(MutableFunctor &functor)
+FunctorCode LayerElement::Accept(Functor &functor)
 {
     return functor.VisitLayerElement(this);
 }
@@ -1093,7 +1104,7 @@ FunctorCode LayerElement::Accept(ConstFunctor &functor) const
     return functor.VisitLayerElement(this);
 }
 
-FunctorCode LayerElement::AcceptEnd(MutableFunctor &functor)
+FunctorCode LayerElement::AcceptEnd(Functor &functor)
 {
     return functor.VisitLayerElementEnd(this);
 }
@@ -1101,90 +1112,6 @@ FunctorCode LayerElement::AcceptEnd(MutableFunctor &functor)
 FunctorCode LayerElement::AcceptEnd(ConstFunctor &functor) const
 {
     return functor.VisitLayerElementEnd(this);
-}
-
-int LayerElement::ResetVerticalAlignment(FunctorParams *functorParams)
-{
-    // Nothing to do since m_drawingYRel is reset in ResetHorizontalAlignment and set in CalcAlignmentPitchPos
-
-    return FUNCTOR_CONTINUE;
-}
-
-int LayerElement::ApplyPPUFactor(FunctorParams *functorParams)
-{
-    ApplyPPUFactorParams *params = vrv_params_cast<ApplyPPUFactorParams *>(functorParams);
-    assert(params);
-
-    if (this->IsScoreDefElement()) return FUNCTOR_SIBLINGS;
-
-    if (m_xAbs != VRV_UNSET) m_xAbs /= params->m_page->GetPPUFactor();
-
-    return FUNCTOR_CONTINUE;
-}
-
-int LayerElement::AdjustBeams(FunctorParams *functorParams)
-{
-    AdjustBeamParams *params = vrv_params_cast<AdjustBeamParams *>(functorParams);
-    assert(params);
-
-    // ignore elements that are not in the beam or are direct children of the beam
-    if (!params->m_beam) return FUNCTOR_CONTINUE;
-    if (!params->m_isOtherLayer && !this->Is(ACCID) && !this->IsGraceNote()
-        && ((this->GetFirstAncestor(BEAM) == params->m_beam) || (this->GetFirstAncestor(FTREM) == params->m_beam)))
-        return FUNCTOR_CONTINUE;
-    // ignore elements that are both on other layer and cross-staff
-    if (params->m_isOtherLayer && m_crossStaff) return FUNCTOR_CONTINUE;
-    // ignore specific elements, since they should not be influencing beam positioning
-    if (this->Is({ BTREM, GRACEGRP, SPACE, TUPLET, TUPLET_BRACKET, TUPLET_NUM })) return FUNCTOR_CONTINUE;
-    // ignore elements that start before the beam
-    if (this->GetDrawingX() < params->m_x1) return FUNCTOR_CONTINUE;
-    // ignore elements that have @visible attribute set to false
-    AttVisibilityComparison isInvisible(this->GetClassId(), BOOLEAN_false);
-    if (isInvisible(this)) return FUNCTOR_SIBLINGS;
-    // ignore accidentals outside the staff
-    if (this->Is(ACCID)) {
-        Accid *accid = vrv_cast<Accid *>(this);
-        assert(accid);
-        if (accid->GetFunc() == accidLog_FUNC_edit) return FUNCTOR_CONTINUE;
-        if (accid->HasPlace()) return FUNCTOR_CONTINUE;
-    }
-    const StemmedDrawingInterface *stemInterface = this->GetStemmedDrawingInterface();
-    if (stemInterface
-        && (((params->m_directionBias == 1) && (stemInterface->GetDrawingStemDir() == STEMDIRECTION_up))
-            || ((params->m_directionBias == -1) && (stemInterface->GetDrawingStemDir() == STEMDIRECTION_down)))) {
-        return FUNCTOR_CONTINUE;
-    }
-
-    Staff *staff = this->GetAncestorStaff();
-
-    // check if top/bottom of the element overlaps with beam coordinates
-    int leftMargin = 0, rightMargin = 0;
-    BeamDrawingInterface *beam = params->m_beam->GetBeamDrawingInterface();
-    const auto [above, below] = beam->GetAdditionalBeamCount();
-    int beamCount = std::max(above, below);
-    if (params->m_beam->Is(FTREM)) --beamCount;
-    const int currentBeamYLeft = params->m_y1 + params->m_beamSlope * (this->GetContentLeft() - params->m_x1);
-    const int currentBeamYRight = params->m_y1 + params->m_beamSlope * (this->GetContentRight() - params->m_x1);
-    if (params->m_directionBias > 0) {
-        leftMargin = this->GetContentTop() - currentBeamYLeft + beamCount * beam->m_beamWidth + beam->m_beamWidthBlack;
-        rightMargin
-            = this->GetContentTop() - currentBeamYRight + beamCount * beam->m_beamWidth + beam->m_beamWidthBlack;
-    }
-    else {
-        leftMargin
-            = this->GetContentBottom() - currentBeamYLeft - beamCount * beam->m_beamWidth - beam->m_beamWidthBlack;
-        rightMargin
-            = this->GetContentBottom() - currentBeamYRight - beamCount * beam->m_beamWidth - beam->m_beamWidthBlack;
-    }
-
-    const int overlapMargin = std::max(leftMargin * params->m_directionBias, rightMargin * params->m_directionBias);
-    if (overlapMargin >= params->m_directionBias * params->m_overlapMargin) {
-        const int staffOffset = params->m_doc->GetDrawingUnit(staff->m_drawingStaffSize);
-        params->m_overlapMargin
-            = (((overlapMargin + staffOffset - 1) / staffOffset + 0.5) * staffOffset) * params->m_directionBias;
-    }
-
-    return FUNCTOR_CONTINUE;
 }
 
 int LayerElement::AdjustOverlappingLayers(const Doc *doc, const std::vector<LayerElement *> &otherElements,
@@ -1397,193 +1324,6 @@ std::pair<int, bool> LayerElement::CalcElementHorizontalOverlap(const Doc *doc,
     }
 
     return { shift, isInUnison };
-}
-
-int LayerElement::AdjustTupletNumOverlap(FunctorParams *functorParams) const
-{
-    AdjustTupletNumOverlapParams *params = vrv_params_cast<AdjustTupletNumOverlapParams *>(functorParams);
-    assert(params);
-
-    if (!this->Is({ ARTIC, ACCID, CHORD, DOT, FLAG, NOTE, REST, STEM }) || !this->HasSelfBB()) return FUNCTOR_CONTINUE;
-
-    if (this->Is({ CHORD, NOTE, REST })
-        && ((m_crossStaff || (this->GetFirstAncestor(STAFF) != params->m_staff)) && (m_crossStaff != params->m_staff)))
-        return FUNCTOR_SIBLINGS;
-
-    if (!params->m_tupletNum->HorizontalSelfOverlap(this, params->m_horizontalMargin)
-        && !params->m_tupletNum->VerticalSelfOverlap(this, params->m_verticalMargin)) {
-        return FUNCTOR_CONTINUE;
-    }
-
-    if (params->m_drawingNumPos == STAFFREL_basic_above) {
-        int dist = this->GetSelfTop();
-        if (params->m_yRel < dist) params->m_yRel = dist;
-    }
-    else {
-        int dist = this->GetSelfBottom();
-        if (params->m_yRel > dist) params->m_yRel = dist;
-    }
-
-    return FUNCTOR_CONTINUE;
-}
-
-int LayerElement::AdjustXRelForTranscription(FunctorParams *)
-{
-    if (m_xAbs == VRV_UNSET) return FUNCTOR_CONTINUE;
-
-    if (this->IsScoreDefElement()) return FUNCTOR_SIBLINGS;
-
-    if (!this->HasSelfBB()) return FUNCTOR_CONTINUE;
-
-    this->SetDrawingXRel(-this->GetSelfX1());
-
-    return FUNCTOR_CONTINUE;
-}
-
-int LayerElement::InitOnsetOffset(FunctorParams *functorParams)
-{
-    InitOnsetOffsetParams *params = vrv_params_cast<InitOnsetOffsetParams *>(functorParams);
-    assert(params);
-
-    if (this->IsScoreDefElement()) return FUNCTOR_SIBLINGS;
-
-    LayerElement *element = this->ThisOrSameasLink();
-
-    double incrementScoreTime;
-
-    if (element->Is(REST) || element->Is(SPACE)) {
-        incrementScoreTime = element->GetAlignmentDuration(
-            params->m_currentMensur, params->m_currentMeterSig, true, params->m_notationType);
-        incrementScoreTime = incrementScoreTime / (DUR_MAX / DURATION_4);
-        // For rests to be possibly added to the timemap
-        if (element->Is(REST)) {
-            Rest *rest = vrv_cast<Rest *>(element);
-            double realTimeIncrementSeconds = incrementScoreTime * 60.0 / params->m_currentTempo;
-            rest->SetScoreTimeOnset(params->m_currentScoreTime);
-            rest->SetRealTimeOnsetSeconds(params->m_currentRealTimeSeconds);
-            rest->SetScoreTimeOffset(params->m_currentScoreTime + incrementScoreTime);
-            rest->SetRealTimeOffsetSeconds(params->m_currentRealTimeSeconds + realTimeIncrementSeconds);
-        }
-        params->m_currentScoreTime += incrementScoreTime;
-        params->m_currentRealTimeSeconds += incrementScoreTime * 60.0 / params->m_currentTempo;
-    }
-    else if (element->Is(NOTE)) {
-        Note *note = vrv_cast<Note *>(element);
-        assert(note);
-
-        // For now just ignore grace notes
-        if (note->IsGraceNote()) return FUNCTOR_CONTINUE;
-
-        Chord *chord = note->IsChordTone();
-        TabGrp *tabGrp = note->IsTabGrpNote();
-
-        // If the note has a @dur or a @dur.ges, take it into account
-        // This means that overwriting only @dots or @dots.ges will not be taken into account
-        if (chord && !note->HasDur() && !note->HasDurGes()) {
-            incrementScoreTime = chord->GetAlignmentDuration(
-                params->m_currentMensur, params->m_currentMeterSig, true, params->m_notationType);
-        }
-        else if (tabGrp && !note->HasDur() && !note->HasDurGes()) {
-            incrementScoreTime = tabGrp->GetAlignmentDuration(
-                params->m_currentMensur, params->m_currentMeterSig, true, params->m_notationType);
-        }
-        else {
-            incrementScoreTime = note->GetAlignmentDuration(
-                params->m_currentMensur, params->m_currentMeterSig, true, params->m_notationType);
-        }
-        incrementScoreTime = incrementScoreTime / (DUR_MAX / DURATION_4);
-        double realTimeIncrementSeconds = incrementScoreTime * 60.0 / params->m_currentTempo;
-
-        // LogDebug("Note Alignment Duration %f - Dur %d - Diatonic Pitch %d - Track %d", GetAlignmentDuration(),
-        // note->GetNoteOrChordDur(element), note->GetDiatonicPitch(), *midiTrack);
-        // LogDebug("Oct %d - Pname %d - Accid %d", note->GetOct(), note->GetPname(), note->GetAccid());
-
-        // When we have a @sameas, do store the onset / offset values of the pointed note in the pointing note
-        Note *storeNote = (this == element) ? note : dynamic_cast<Note *>(this);
-        if (storeNote) {
-            storeNote->SetScoreTimeOnset(params->m_currentScoreTime);
-            storeNote->SetRealTimeOnsetSeconds(params->m_currentRealTimeSeconds);
-            storeNote->SetScoreTimeOffset(params->m_currentScoreTime + incrementScoreTime);
-            storeNote->SetRealTimeOffsetSeconds(params->m_currentRealTimeSeconds + realTimeIncrementSeconds);
-        }
-
-        // increase the currentTime accordingly, but only if not in a chord or tabGrp - checkit with note->IsChordTone()
-        // or note->IsTabGrpNote()
-        if (!(note->IsChordTone()) && !(note->IsTabGrpNote())) {
-            params->m_currentScoreTime += incrementScoreTime;
-            params->m_currentRealTimeSeconds += realTimeIncrementSeconds;
-        }
-    }
-    else if (element->Is(BEATRPT)) {
-        BeatRpt *rpt = vrv_cast<BeatRpt *>(element);
-        assert(rpt);
-
-        incrementScoreTime = rpt->GetAlignmentDuration(
-            params->m_currentMensur, params->m_currentMeterSig, true, params->m_notationType);
-        incrementScoreTime = incrementScoreTime / (DUR_MAX / DURATION_4);
-        rpt->SetScoreTimeOnset(params->m_currentScoreTime);
-        params->m_currentScoreTime += incrementScoreTime;
-        params->m_currentRealTimeSeconds += incrementScoreTime * 60.0 / params->m_currentTempo;
-    }
-    else if (this->Is({ BEAM, LIGATURE, FTREM, TUPLET }) && this->HasSameasLink()) {
-        incrementScoreTime = this->GetSameAsContentAlignmentDuration(
-            params->m_currentMensur, params->m_currentMeterSig, true, params->m_notationType);
-        incrementScoreTime = incrementScoreTime / (DUR_MAX / DURATION_4);
-        params->m_currentScoreTime += incrementScoreTime;
-        params->m_currentRealTimeSeconds += incrementScoreTime * 60.0 / params->m_currentTempo;
-    }
-    return FUNCTOR_CONTINUE;
-}
-
-int LayerElement::InitTimemapTies(FunctorParams *)
-{
-    return FUNCTOR_CONTINUE;
-}
-
-int LayerElement::GenerateMIDI(FunctorParams *functorParams)
-{
-    GenerateMIDIParams *params = vrv_params_cast<GenerateMIDIParams *>(functorParams);
-    assert(params);
-
-    if (this->IsScoreDefElement()) return FUNCTOR_SIBLINGS;
-
-    // Only resolve simple sameas links to avoid infinite recursion
-    LayerElement *sameas = dynamic_cast<LayerElement *>(this->GetSameasLink());
-    if (sameas && !sameas->HasSameasLink()) {
-        sameas->Process(params->m_functor, functorParams);
-    }
-
-    return FUNCTOR_CONTINUE;
-}
-
-int LayerElement::GenerateTimemap(FunctorParams *functorParams)
-{
-    GenerateTimemapParams *params = vrv_params_cast<GenerateTimemapParams *>(functorParams);
-    assert(params);
-
-    if (this->IsScoreDefElement()) return FUNCTOR_SIBLINGS;
-
-    // Only resolve simple sameas links to avoid infinite recursion
-    LayerElement *sameas = dynamic_cast<LayerElement *>(this->GetSameasLink());
-    if (sameas && !sameas->HasSameasLink()) {
-        sameas->Process(params->m_functor, functorParams);
-    }
-
-    return FUNCTOR_CONTINUE;
-}
-
-int LayerElement::InitMaxMeasureDuration(FunctorParams *functorParams)
-{
-    InitMaxMeasureDurationParams *params = vrv_params_cast<InitMaxMeasureDurationParams *>(functorParams);
-    assert(params);
-
-    if (this->Is(MULTIREST)) {
-        MultiRest *multiRest = vrv_cast<MultiRest *>(this);
-        assert(multiRest);
-        params->m_multiRestFactor = multiRest->GetNum();
-    }
-
-    return FUNCTOR_SIBLINGS;
 }
 
 } // namespace vrv

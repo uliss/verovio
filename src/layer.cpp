@@ -23,7 +23,6 @@
 #include "editorial.h"
 #include "findlayerelementsfunctor.h"
 #include "functor.h"
-#include "functorparams.h"
 #include "keysig.h"
 #include "measure.h"
 #include "mensur.h"
@@ -197,6 +196,13 @@ LayerElement *Layer::GetAtPos(int x)
 const LayerElement *Layer::GetAtPos(int x) const
 {
     const Object *first = this->GetFirst();
+    if (!first) return NULL;
+
+    if (first->IsEditorialElement()) {
+        IsEditorialElementComparison cmp;
+        cmp.ReverseComparison();
+        first = this->FindDescendantByComparison(&cmp);
+    }
     if (!first || !first->IsLayerElement()) return NULL;
 
     const LayerElement *element = vrv_cast<const LayerElement *>(first);
@@ -205,8 +211,19 @@ const LayerElement *Layer::GetAtPos(int x) const
 
     const Object *next;
     while ((next = this->GetNext())) {
-        if (!next->IsLayerElement()) continue;
-        const LayerElement *nextLayerElement = vrv_cast<const LayerElement *>(next);
+        const LayerElement *nextLayerElement = NULL;
+        if (next->IsLayerElement()) {
+            nextLayerElement = vrv_cast<const LayerElement *>(next);
+        }
+        else if (next->IsEditorialElement()) {
+            IsEditorialElementComparison cmp;
+            cmp.ReverseComparison();
+            nextLayerElement = vrv_cast<const LayerElement *>(next->FindDescendantByComparison(&cmp));
+            if (!nextLayerElement) continue;
+        }
+        else {
+            continue;
+        }
         assert(nextLayerElement);
         if (nextLayerElement->GetDrawingX() > x) return element;
         element = nextLayerElement;
@@ -332,7 +349,16 @@ data_STEMDIRECTION Layer::GetDrawingStemDir(const ArrayOfBeamElementCoords *coor
     const Staff *staff = first->GetAncestorStaff();
 
     double time = alignmentFirst->GetTime();
-    double duration = alignmentLast->GetTime() - time + last->GetAlignmentDuration();
+    double duration = 0.0;
+    // For the sake of counting number of layers consider only current measure. If first and last elements' layers are
+    // different, take only time within current measure to run GetLayerCountInTimeSpan.
+    const Measure *lastMeasure = vrv_cast<const Measure *>(last->GetFirstAncestor(MEASURE));
+    if (lastMeasure == measure) {
+        duration = alignmentLast->GetTime() - time + last->GetAlignmentDuration();
+    }
+    else {
+        duration = measure->m_measureAligner.GetRightAlignment()->GetTime() - time;
+    }
     duration = durRound(duration);
 
     if (this->GetLayerCountInTimeSpan(time, duration, measure, staff->GetN()) < 2) {
@@ -373,7 +399,7 @@ std::set<int> Layer::GetLayersNInTimeSpan(double time, double duration, const Me
     Filters filters;
     AttNIntegerComparison matchStaff(ALIGNMENT_REFERENCE, staff);
     filters.Add(&matchStaff);
-    layersInTimeSpan.SetFilters(&filters);
+    layersInTimeSpan.PushFilters(&filters);
 
     measure->m_measureAligner.Process(layersInTimeSpan);
 
@@ -455,7 +481,7 @@ ListOfConstObjects Layer::GetLayerElementsInTimeSpan(
     Filters filters;
     AttNIntegerComparison matchStaff(ALIGNMENT_REFERENCE, staff);
     filters.Add(&matchStaff);
-    layerElementsInTimeSpan.SetFilters(&filters);
+    layerElementsInTimeSpan.PushFilters(&filters);
 
     measure->m_measureAligner.Process(layerElementsInTimeSpan);
 
@@ -470,8 +496,10 @@ Clef *Layer::GetCurrentClef()
 const Clef *Layer::GetCurrentClef() const
 {
     const Staff *staff = vrv_cast<const Staff *>(this->GetFirstAncestor(STAFF));
-    assert(staff && staff->m_drawingStaffDef && staff->m_drawingStaffDef->GetCurrentClef());
-    return staff->m_drawingStaffDef->GetCurrentClef();
+    if (staff && staff->m_drawingStaffDef) {
+        return staff->m_drawingStaffDef->GetCurrentClef();
+    }
+    return NULL;
 }
 
 KeySig *Layer::GetCurrentKeySig()
@@ -585,7 +613,7 @@ void Layer::SetDrawingCautionValues(StaffDef *currentStaffDef)
 // Layer functor methods
 //----------------------------------------------------------------------------
 
-FunctorCode Layer::Accept(MutableFunctor &functor)
+FunctorCode Layer::Accept(Functor &functor)
 {
     return functor.VisitLayer(this);
 }
@@ -595,7 +623,7 @@ FunctorCode Layer::Accept(ConstFunctor &functor) const
     return functor.VisitLayer(this);
 }
 
-FunctorCode Layer::AcceptEnd(MutableFunctor &functor)
+FunctorCode Layer::AcceptEnd(Functor &functor)
 {
     return functor.VisitLayerEnd(this);
 }
@@ -603,109 +631,6 @@ FunctorCode Layer::AcceptEnd(MutableFunctor &functor)
 FunctorCode Layer::AcceptEnd(ConstFunctor &functor) const
 {
     return functor.VisitLayerEnd(this);
-}
-
-int Layer::ConvertMarkupArticEnd(FunctorParams *functorParams)
-{
-    ConvertMarkupArticParams *params = vrv_params_cast<ConvertMarkupArticParams *>(functorParams);
-    assert(params);
-
-    for (auto &[parent, artic] : params->m_articPairsToConvert) {
-        artic->SplitMultival(parent);
-    }
-    params->m_articPairsToConvert.clear();
-
-    return FUNCTOR_CONTINUE;
-}
-
-int Layer::ConvertToCastOffMensural(FunctorParams *functorParams)
-{
-    ConvertToCastOffMensuralParams *params = vrv_params_cast<ConvertToCastOffMensuralParams *>(functorParams);
-    assert(params);
-
-    params->m_contentLayer = this;
-
-    params->m_targetLayer = new Layer(*this);
-    params->m_targetLayer->ClearChildren();
-    params->m_targetLayer->CloneReset();
-    // Keep the xml:id of the layer in the first segment
-    params->m_targetLayer->SwapID(this);
-    assert(params->m_targetStaff);
-    params->m_targetStaff->AddChild(params->m_targetLayer);
-
-    return FUNCTOR_CONTINUE;
-}
-
-int Layer::ConvertToUnCastOffMensural(FunctorParams *functorParams)
-{
-    ConvertToUnCastOffMensuralParams *params = vrv_params_cast<ConvertToUnCastOffMensuralParams *>(functorParams);
-    assert(params);
-
-    if (params->m_contentLayer == NULL) {
-        params->m_contentLayer = this;
-    }
-    else {
-        params->m_contentLayer->MoveChildrenFrom(this);
-    }
-
-    return FUNCTOR_SIBLINGS;
-}
-
-int Layer::InitProcessingLists(FunctorParams *functorParams)
-{
-    InitProcessingListsParams *params = vrv_params_cast<InitProcessingListsParams *>(functorParams);
-    assert(params);
-
-    // Alternate solution with StaffN_LayerN_VerseN_t
-    // StaffN_LayerN_VerseN_t *tree = vrv_cast<StaffN_LayerN_VerseN_t*>((*params).at(0));
-
-    Staff *staff = vrv_cast<Staff *>(this->GetFirstAncestor(STAFF));
-    assert(staff);
-    params->m_layerTree.child[staff->GetN()].child[this->GetN()];
-
-    return FUNCTOR_CONTINUE;
-}
-
-int Layer::InitOnsetOffset(FunctorParams *functorParams)
-{
-    InitOnsetOffsetParams *params = vrv_params_cast<InitOnsetOffsetParams *>(functorParams);
-    assert(params);
-
-    params->m_currentScoreTime = 0.0;
-    params->m_currentRealTimeSeconds = 0.0;
-
-    params->m_currentMensur = this->GetCurrentMensur();
-    params->m_currentMeterSig = this->GetCurrentMeterSig();
-
-    return FUNCTOR_CONTINUE;
-}
-
-int Layer::GenerateMIDI(FunctorParams *functorParams)
-{
-    GenerateMIDIParams *params = vrv_params_cast<GenerateMIDIParams *>(functorParams);
-    assert(params);
-
-    if (this->GetCue() == BOOLEAN_true && params->m_cueExclusion) return FUNCTOR_SIBLINGS;
-
-    return FUNCTOR_CONTINUE;
-}
-
-int Layer::GenerateMIDIEnd(FunctorParams *functorParams)
-{
-    GenerateMIDIParams *params = vrv_params_cast<GenerateMIDIParams *>(functorParams);
-    assert(params);
-
-    // stop all previously held notes
-    for (auto &held : params->m_heldNotes) {
-        if (held.m_pitch > 0) {
-            params->m_midiFile->addNoteOff(params->m_midiTrack, held.m_stopTime * params->m_midiFile->getTPQ(),
-                params->m_midiChannel, held.m_pitch);
-        }
-    }
-
-    params->m_heldNotes.clear();
-
-    return FUNCTOR_CONTINUE;
 }
 
 } // namespace vrv

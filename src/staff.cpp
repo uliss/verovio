@@ -19,7 +19,6 @@
 #include "doc.h"
 #include "editorial.h"
 #include "functor.h"
-#include "functorparams.h"
 #include "hairpin.h"
 #include "keysig.h"
 #include "layer.h"
@@ -344,7 +343,7 @@ void LedgerLine::AddDash(int left, int right, int extension)
 // Staff functor methods
 //----------------------------------------------------------------------------
 
-FunctorCode Staff::Accept(MutableFunctor &functor)
+FunctorCode Staff::Accept(Functor &functor)
 {
     return functor.VisitStaff(this);
 }
@@ -354,7 +353,7 @@ FunctorCode Staff::Accept(ConstFunctor &functor) const
     return functor.VisitStaff(this);
 }
 
-FunctorCode Staff::AcceptEnd(MutableFunctor &functor)
+FunctorCode Staff::AcceptEnd(Functor &functor)
 {
     return functor.VisitStaffEnd(this);
 }
@@ -362,139 +361,6 @@ FunctorCode Staff::AcceptEnd(MutableFunctor &functor)
 FunctorCode Staff::AcceptEnd(ConstFunctor &functor) const
 {
     return functor.VisitStaffEnd(this);
-}
-
-int Staff::ConvertToCastOffMensural(FunctorParams *functorParams)
-{
-    ConvertToCastOffMensuralParams *params = vrv_params_cast<ConvertToCastOffMensuralParams *>(functorParams);
-    assert(params);
-
-    params->m_targetStaff = new Staff(*this);
-    params->m_targetStaff->ClearChildren();
-    params->m_targetStaff->CloneReset();
-    // Keep the xml:id of the staff in the first staff segment
-    params->m_targetStaff->SwapID(this);
-    assert(params->m_targetMeasure);
-    params->m_targetMeasure->AddChild(params->m_targetStaff);
-
-    return FUNCTOR_CONTINUE;
-}
-
-int Staff::ResetVerticalAlignment(FunctorParams *functorParams)
-{
-    m_staffAlignment = NULL;
-
-    ClearLedgerLines();
-
-    return FUNCTOR_CONTINUE;
-}
-
-int Staff::ApplyPPUFactor(FunctorParams *functorParams)
-{
-    ApplyPPUFactorParams *params = vrv_params_cast<ApplyPPUFactorParams *>(functorParams);
-    assert(params);
-
-    if (m_yAbs != VRV_UNSET) m_yAbs /= params->m_page->GetPPUFactor();
-
-    return FUNCTOR_CONTINUE;
-}
-
-int Staff::AlignVertically(FunctorParams *functorParams)
-{
-    AlignVerticallyParams *params = vrv_params_cast<AlignVerticallyParams *>(functorParams);
-    assert(params);
-
-    if (!this->DrawingIsVisible()) {
-        return FUNCTOR_SIBLINGS;
-    }
-
-    params->m_staffN = this->GetN();
-
-    // this gets (or creates) the measureAligner for the measure
-    StaffAlignment *alignment = params->m_systemAligner->GetStaffAlignment(params->m_staffIdx, this, params->m_doc);
-
-    assert(alignment);
-
-    // Set the pointer of the m_alignment
-    m_staffAlignment = alignment;
-
-    std::vector<Object *>::const_iterator verseIterator
-        = std::find_if(m_timeSpanningElements.begin(), m_timeSpanningElements.end(), ObjectComparison(VERSE));
-    if (verseIterator != m_timeSpanningElements.end()) {
-        Verse *v = vrv_cast<Verse *>(*verseIterator);
-        assert(v);
-        alignment->AddVerseN(v->GetN());
-    }
-
-    // add verse number to alignment in case there are spanning SYL elements but there is no verse number already - this
-    // generally happens with verses spanning over several systems which results in invalid placement of connector lines
-    std::vector<Object *>::const_iterator sylIterator
-        = std::find_if(m_timeSpanningElements.begin(), m_timeSpanningElements.end(), ObjectComparison(SYL));
-    if (sylIterator != m_timeSpanningElements.end()) {
-        Verse *verse = vrv_cast<Verse *>((*sylIterator)->GetFirstAncestor(VERSE));
-        if (verse) {
-            const int verseNumber = verse->GetN();
-            const bool verseCollapse = params->m_doc->GetOptions()->m_lyricVerseCollapse.GetValue();
-            if (!alignment->GetVersePosition(verseNumber, verseCollapse)) {
-                alignment->AddVerseN(verseNumber);
-            }
-        }
-    }
-
-    // for next staff
-    params->m_staffIdx++;
-
-    return FUNCTOR_CONTINUE;
-}
-
-int Staff::CastOffEncoding(FunctorParams *functorParams)
-{
-    // Staff alignments must be reset, otherwise they would dangle whenever they belong to a deleted system
-    m_staffAlignment = NULL;
-    return FUNCTOR_SIBLINGS;
-}
-
-int Staff::InitOnsetOffset(FunctorParams *functorParams)
-{
-    InitOnsetOffsetParams *params = vrv_params_cast<InitOnsetOffsetParams *>(functorParams);
-    assert(params);
-
-    assert(m_drawingStaffDef);
-
-    if (m_drawingStaffDef->HasNotationtype()) {
-        params->m_notationType = m_drawingStaffDef->GetNotationtype();
-    }
-    else {
-        params->m_notationType = NOTATIONTYPE_cmn;
-    }
-
-    return FUNCTOR_CONTINUE;
-}
-
-int Staff::GenerateMIDI(FunctorParams *functorParams)
-{
-    GenerateMIDIParams *params = vrv_params_cast<GenerateMIDIParams *>(functorParams);
-    assert(params);
-
-    params->m_expandedNotes.clear();
-
-    return FUNCTOR_CONTINUE;
-}
-
-int Staff::Transpose(FunctorParams *functorParams)
-{
-    TransposeParams *params = vrv_params_cast<TransposeParams *>(functorParams);
-    assert(params);
-
-    if (params->m_transposeToSoundingPitch) {
-        int transposeInterval = 0;
-        if (this->HasN() && (params->m_transposeIntervalForStaffN.count(this->GetN()) > 0)) {
-            transposeInterval = params->m_transposeIntervalForStaffN.at(this->GetN());
-        }
-        params->m_transposer->SetTransposition(transposeInterval);
-    }
-
-    return FUNCTOR_CONTINUE;
 }
 
 } // namespace vrv

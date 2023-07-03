@@ -15,7 +15,6 @@
 
 #include "ending.h"
 #include "functor.h"
-#include "functorparams.h"
 #include "preparedatafunctor.h"
 #include "system.h"
 #include "vrv.h"
@@ -82,7 +81,7 @@ void SystemMilestoneInterface::ConvertToPageBasedMilestone(Object *object, Objec
 // SystemMilestoneEnd functor methods
 //----------------------------------------------------------------------------
 
-FunctorCode SystemMilestoneEnd::Accept(MutableFunctor &functor)
+FunctorCode SystemMilestoneEnd::Accept(Functor &functor)
 {
     return functor.VisitSystemMilestone(this);
 }
@@ -92,7 +91,7 @@ FunctorCode SystemMilestoneEnd::Accept(ConstFunctor &functor) const
     return functor.VisitSystemMilestone(this);
 }
 
-FunctorCode SystemMilestoneEnd::AcceptEnd(MutableFunctor &functor)
+FunctorCode SystemMilestoneEnd::AcceptEnd(Functor &functor)
 {
     return functor.VisitSystemMilestoneEnd(this);
 }
@@ -100,42 +99,6 @@ FunctorCode SystemMilestoneEnd::AcceptEnd(MutableFunctor &functor)
 FunctorCode SystemMilestoneEnd::AcceptEnd(ConstFunctor &functor) const
 {
     return functor.VisitSystemMilestoneEnd(this);
-}
-
-int SystemMilestoneEnd::CastOffSystems(FunctorParams *functorParams)
-{
-    CastOffSystemsParams *params = vrv_params_cast<CastOffSystemsParams *>(functorParams);
-    assert(params);
-
-    // Since the functor returns FUNCTOR_SIBLINGS we should never go lower than the system children
-    assert(dynamic_cast<System *>(this->GetParent()));
-
-    // Special case where we use the Relinquish method.
-    // We want to move the measure to the currentSystem. However, we cannot use DetachChild
-    // from the content System because this screws up the iterator. Relinquish gives up
-    // the ownership of the Measure - the contentSystem will be deleted afterwards.
-    SystemMilestoneEnd *endMilestone
-        = dynamic_cast<SystemMilestoneEnd *>(params->m_contentSystem->Relinquish(this->GetIdx()));
-    // End milestones are not added to the pending objects because we do not want them to be placed at the beginning of
-    // the next system but only if the pending object array it empty (otherwise it will mess up the MEI tree)
-    if (params->m_pendingElements.empty()) {
-        params->m_currentSystem->AddChild(endMilestone);
-    }
-    else {
-        params->m_pendingElements.push_back(endMilestone);
-    }
-
-    return FUNCTOR_SIBLINGS;
-}
-
-int SystemMilestoneEnd::CastOffToSelection(FunctorParams *functorParams)
-{
-    CastOffToSelectionParams *params = vrv_params_cast<CastOffToSelectionParams *>(functorParams);
-    assert(params);
-
-    MoveItselfTo(params->m_currentSystem);
-
-    return FUNCTOR_SIBLINGS;
 }
 
 //----------------------------------------------------------------------------

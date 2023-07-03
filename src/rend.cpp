@@ -15,7 +15,6 @@
 
 #include "editorial.h"
 #include "functor.h"
-#include "functorparams.h"
 #include "lb.h"
 #include "num.h"
 #include "symbol.h"
@@ -34,14 +33,18 @@ Rend::Rend()
     : TextElement(REND, "rend-")
     , AreaPosInterface()
     , AttColor()
+    , AttExtSymAuth()
     , AttLang()
+    , AttNNumberLike()
     , AttTextRendition()
     , AttTypography()
     , AttWhitespace()
 {
     this->RegisterInterface(AreaPosInterface::GetAttClasses(), AreaPosInterface::IsInterface());
     this->RegisterAttClass(ATT_COLOR);
+    this->RegisterAttClass(ATT_EXTSYMAUTH);
     this->RegisterAttClass(ATT_LANG);
+    this->RegisterAttClass(ATT_NNUMBERLIKE);
     this->RegisterAttClass(ATT_TEXTRENDITION);
     this->RegisterAttClass(ATT_TYPOGRAPHY);
     this->RegisterAttClass(ATT_WHITESPACE);
@@ -56,7 +59,9 @@ void Rend::Reset()
     TextElement::Reset();
     AreaPosInterface::Reset();
     this->ResetColor();
+    this->ResetExtSymAuth();
     this->ResetLang();
+    this->ResetNNumberLike();
     this->ResetTextRendition();
     this->ResetTypography();
     this->ResetWhitespace();
@@ -88,11 +93,20 @@ bool Rend::IsSupportedChild(Object *child)
     return true;
 }
 
+bool Rend::HasEnclosure() const
+{
+    if (!this->HasRend()) return false;
+
+    const bool hasEnclosure = ((this->GetRend() == TEXTRENDITION_box) || (this->GetRend() == TEXTRENDITION_circle)
+        || (this->GetRend() == TEXTRENDITION_dbox) || (this->GetRend() == TEXTRENDITION_tbox));
+    return hasEnclosure;
+}
+
 //----------------------------------------------------------------------------
 // Functor methods
 //----------------------------------------------------------------------------
 
-FunctorCode Rend::Accept(MutableFunctor &functor)
+FunctorCode Rend::Accept(Functor &functor)
 {
     return functor.VisitRend(this);
 }
@@ -102,7 +116,7 @@ FunctorCode Rend::Accept(ConstFunctor &functor) const
     return functor.VisitRend(this);
 }
 
-FunctorCode Rend::AcceptEnd(MutableFunctor &functor)
+FunctorCode Rend::AcceptEnd(Functor &functor)
 {
     return functor.VisitRendEnd(this);
 }
@@ -110,22 +124,6 @@ FunctorCode Rend::AcceptEnd(MutableFunctor &functor)
 FunctorCode Rend::AcceptEnd(ConstFunctor &functor) const
 {
     return functor.VisitRendEnd(this);
-}
-
-int Rend::AlignVertically(FunctorParams *functorParams)
-{
-    AlignVerticallyParams *params = vrv_params_cast<AlignVerticallyParams *>(functorParams);
-    assert(params);
-
-    if (this->GetHalign()) {
-        switch (this->GetHalign()) {
-            case (HORIZONTALALIGNMENT_right): this->SetDrawingXRel(params->m_pageWidth); break;
-            case (HORIZONTALALIGNMENT_center): this->SetDrawingXRel(params->m_pageWidth / 2); break;
-            default: break;
-        }
-    }
-
-    return FUNCTOR_SIBLINGS;
 }
 
 } // namespace vrv

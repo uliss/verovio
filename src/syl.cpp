@@ -16,7 +16,6 @@
 #include "doc.h"
 #include "editorial.h"
 #include "functor.h"
-#include "functorparams.h"
 #include "measure.h"
 #include "note.h"
 #include "smufl.h"
@@ -81,6 +80,16 @@ bool Syl::IsSupportedChild(Object *child)
     return true;
 }
 
+int Syl::CalcHyphenLength(Doc *doc, int staffSize)
+{
+    FontInfo *lyricFont = doc->GetDrawingLyricFont(staffSize);
+    int dashLength = doc->GetTextGlyphWidth(L'-', lyricFont, false);
+
+    Syl::AdjustToLyricSize(doc, dashLength);
+
+    return dashLength;
+}
+
 int Syl::CalcConnectorSpacing(Doc *doc, int staffSize)
 {
     assert(doc);
@@ -92,31 +101,24 @@ int Syl::CalcConnectorSpacing(Doc *doc, int staffSize)
 
     // We have a word connector - the space have to be wide enough
     if ((pos == sylLog_WORDPOS_i) || (pos == sylLog_WORDPOS_m)) {
-        int hyphen = doc->GetDrawingUnit(staffSize) * doc->GetOptions()->m_lyricHyphenLength.GetValue();
-        // Adjust it proportionally to the lyric size
-        hyphen *= doc->GetOptions()->m_lyricSize.GetValue() / doc->GetOptions()->m_lyricSize.GetDefault();
-        spacing = (2 * hyphen);
+        spacing = 2 * this->CalcHyphenLength(doc, staffSize);
     }
     // Elision
     else if (con == sylLog_CON_b) {
         if (doc->GetOptions()->m_lyricElision.GetValue() == ELISION_unicode) {
             // Equivalent spacing with 0x230F
-            spacing += doc->GetDrawingUnit(staffSize) * 2.2;
+            spacing = doc->GetDrawingUnit(staffSize) * 2.2;
         }
         else {
             // Calculate the elision space with the current music font
-            int elisionSpace = doc->GetGlyphAdvX(doc->GetOptions()->m_lyricElision.GetValue(), staffSize, false);
-            // Adjust it proportionally to the lyric size
-            elisionSpace *= doc->GetOptions()->m_lyricSize.GetValue() / doc->GetOptions()->m_lyricSize.GetDefault();
-            spacing = elisionSpace;
+            spacing = doc->GetGlyphAdvX(doc->GetOptions()->m_lyricElision.GetValue(), staffSize, false);
+            Syl::AdjustToLyricSize(doc, spacing);
         }
     }
     // Spacing of words as set in the staff according to the staff and font sizes
     else {
-        int wordSpace = doc->GetDrawingUnit(staffSize) * doc->GetOptions()->m_lyricWordSpace.GetValue();
-        // Adjust it proportionally to the lyric size
-        wordSpace *= doc->GetOptions()->m_lyricSize.GetValue() / doc->GetOptions()->m_lyricSize.GetDefault();
-        spacing = wordSpace;
+        spacing = doc->GetDrawingUnit(staffSize) * doc->GetOptions()->m_lyricWordSpace.GetValue();
+        Syl::AdjustToLyricSize(doc, spacing);
     }
 
     return spacing;
@@ -138,11 +140,17 @@ int Syl::GetDrawingHeight() const
     return 0;
 }
 
+void Syl::AdjustToLyricSize(const Doc *doc, int &value)
+{
+    const OptionDbl &lyricSize = doc->GetOptions()->m_lyricSize;
+    value *= lyricSize.GetValue() / lyricSize.GetDefault();
+}
+
 //----------------------------------------------------------------------------
 // Functor methods
 //----------------------------------------------------------------------------
 
-FunctorCode Syl::Accept(MutableFunctor &functor)
+FunctorCode Syl::Accept(Functor &functor)
 {
     return functor.VisitSyl(this);
 }
@@ -152,7 +160,7 @@ FunctorCode Syl::Accept(ConstFunctor &functor) const
     return functor.VisitSyl(this);
 }
 
-FunctorCode Syl::AcceptEnd(MutableFunctor &functor)
+FunctorCode Syl::AcceptEnd(Functor &functor)
 {
     return functor.VisitSylEnd(this);
 }
@@ -160,20 +168,6 @@ FunctorCode Syl::AcceptEnd(MutableFunctor &functor)
 FunctorCode Syl::AcceptEnd(ConstFunctor &functor) const
 {
     return functor.VisitSylEnd(this);
-}
-
-int Syl::GenerateMIDI(FunctorParams *functorParams)
-{
-    GenerateMIDIParams *params = vrv_params_cast<GenerateMIDIParams *>(functorParams);
-    assert(params);
-
-    const int startTime = params->m_totalTime + params->m_lastNote->GetScoreTimeOnset();
-    Text *text = vrv_cast<Text *>(this->GetChild(0, TEXT));
-    const std::string sylText = UTF32to8(text->GetText());
-
-    params->m_midiFile->addLyric(params->m_midiTrack, startTime * params->m_midiFile->getTPQ(), sylText);
-
-    return FUNCTOR_SIBLINGS;
 }
 
 bool Syl::CreateDefaultZone(Doc *doc)

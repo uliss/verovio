@@ -57,6 +57,21 @@ LogLevel StrToLogLevel(const std::string &level);
 bool AreEqual(double dFirstVal, double dSecondVal);
 
 /**
+ * Utility to check if the string is a valid integer for std::stoi
+ */
+bool IsValidInteger(const std::string &value);
+
+/**
+ * Utility to check if the string is valid double for std::stod
+ */
+bool IsValidDouble(const std::string &value);
+
+/**
+ * Utility to check if the string contains only digits (positive integer without sign)
+ */
+bool IsDigits(const std::string &value);
+
+/**
  * Extract the ID from any URI
  */
 std::string ExtractIDFragment(std::string refID);
@@ -100,6 +115,16 @@ std::string GetVersion();
  * Base 36 uses 0-9 and a-z, base 62 also A-Z.
  */
 std::string BaseEncodeInt(uint32_t value, uint8_t base);
+
+/**
+ * Convert string from camelCase.
+ */
+std::string FromCamelCase(const std::string &s);
+
+/**
+ * Convert string to camelCase.
+ */
+std::string ToCamelCase(const std::string &s);
 
 /**
  *

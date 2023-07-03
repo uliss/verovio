@@ -73,12 +73,26 @@ public:
     bool IsSupportedChild(Object *object) override;
 
     /**
+     * Calculate the hyphen length using the text font
+     */
+    int CalcHyphenLength(Doc *doc, int staffSize);
+
+    /**
      * Calculate the spacing needed depending on the @worpos and @con
      */
     int CalcConnectorSpacing(Doc *doc, int staffSize);
 
     int GetDrawingWidth() const;
     int GetDrawingHeight() const;
+
+    //----------------//
+    // Static methods //
+    //----------------//
+
+    /**
+     * Adjust proportionally to the lyric size
+     */
+    static void AdjustToLyricSize(const Doc *doc, int &value);
 
     //----------//
     // Functors //
@@ -88,16 +102,11 @@ public:
      * Interface for class functor visitation
      */
     ///@{
-    FunctorCode Accept(MutableFunctor &functor) override;
+    FunctorCode Accept(Functor &functor) override;
     FunctorCode Accept(ConstFunctor &functor) const override;
-    FunctorCode AcceptEnd(MutableFunctor &functor) override;
+    FunctorCode AcceptEnd(Functor &functor) override;
     FunctorCode AcceptEnd(ConstFunctor &functor) const override;
     ///@}
-
-    /**
-     * See Object::GenerateMIDI
-     */
-    int GenerateMIDI(FunctorParams *functorParams) override;
 
     /** Create a default zone for a syl based on syllable. */
     bool CreateDefaultZone(Doc *doc);

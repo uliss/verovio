@@ -82,39 +82,11 @@ public:
      * Interface for class functor visitation
      */
     ///@{
-    FunctorCode Accept(MutableFunctor &functor) override;
+    FunctorCode Accept(Functor &functor) override;
     FunctorCode Accept(ConstFunctor &functor) const override;
-    FunctorCode AcceptEnd(MutableFunctor &functor) override;
+    FunctorCode AcceptEnd(Functor &functor) override;
     FunctorCode AcceptEnd(ConstFunctor &functor) const override;
     ///@}
-
-    /**
-     * See Object::ConvertToPageBased
-     */
-    ///@{
-    int ConvertToPageBased(FunctorParams *functorParams) override;
-    int ConvertToPageBasedEnd(FunctorParams *functorParams) override;
-    ///@}
-
-    /**
-     * See Object::ConvertMarkupScoreDef
-     */
-    int ConvertMarkupScoreDef(FunctorParams *) override;
-
-    /**
-     * See Object::CastOffPages
-     */
-    int CastOffPages(FunctorParams *functorParams) override;
-
-    /**
-     * See Object::UnCastOff
-     */
-    int UnCastOff(FunctorParams *functorParams) override;
-
-    /**
-     * See Object::Transpose
-     */
-    int Transpose(FunctorParams *functorParams) override;
 
 private:
     /**

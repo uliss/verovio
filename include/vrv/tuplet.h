@@ -18,6 +18,9 @@ namespace vrv {
 class Note;
 class TupletBracket;
 
+// Helper enum classes
+enum class MelodicDirection { None, Up, Down };
+
 //----------------------------------------------------------------------------
 // Tuplet
 //----------------------------------------------------------------------------
@@ -90,6 +93,11 @@ public:
     ///@}
 
     /**
+     * Determine the melodic direction
+     */
+    MelodicDirection GetMelodicDirection() const;
+
+    /**
      * Calculate the position of the bracket and the num looking at the stem direction or at the encoded values (if
      * any). Called in View::DrawTuplet the first time it is called (and not trough a dedicated CalcTuplet functor)
      */
@@ -101,6 +109,17 @@ public:
      */
     void GetDrawingLeftRightXRel(int &xRelLeft, int &xRelRight, const Doc *doc) const;
 
+    /**
+     * Calculate corresponding cross-staff for the tuplet number if necessary. In case when tuplet is completely
+     * cross-staff nothing will be done, as tuplet number should share staff with tuplet in that case
+     */
+    void CalculateTupletNumCrossStaff(LayerElement *layerElement);
+
+    /**
+     * Check whether tuplet number has valid positioning staffwise
+     */
+    bool HasValidTupletNumPosition(const Staff *preferredStaff, const Staff *otherStaff) const;
+
     //----------//
     // Functors //
     //----------//
@@ -109,26 +128,11 @@ public:
      * Interface for class functor visitation
      */
     ///@{
-    FunctorCode Accept(MutableFunctor &functor) override;
+    FunctorCode Accept(Functor &functor) override;
     FunctorCode Accept(ConstFunctor &functor) const override;
-    FunctorCode AcceptEnd(MutableFunctor &functor) override;
+    FunctorCode AcceptEnd(Functor &functor) override;
     FunctorCode AcceptEnd(ConstFunctor &functor) const override;
     ///@}
-
-    /**
-     * See Object::AdjustTupletsY
-     */
-    int AdjustTupletsY(FunctorParams *functorParams) override;
-
-    /**
-     * See Object::AdjustTupletWithSlurs
-     */
-    int AdjustTupletWithSlurs(FunctorParams *functorParams) override;
-
-    /**
-     * See Object::ResetVerticalAlignment
-     */
-    int ResetVerticalAlignment(FunctorParams *functorParams) override;
 
 protected:
     /**
@@ -137,32 +141,7 @@ protected:
     void FilterList(ListOfConstObjects &childList) const override;
 
 private:
-    /**
-     * Adjust tuplet relative positioning based on possible overlaps
-     */
-    void AdjustTupletBracketY(const Doc *doc, const Staff *staff);
-
-    /**
-     * Adjust tuplet relative positioning for tuplets based on beams
-     */
-    void AdjustTupletBracketBeamY(const Doc *doc, const Staff *staff, TupletBracket *bracket, const Beam *beam);
-
-    /**
-     * Adjust tuplet relative positioning based on possible overlaps
-     */
-    void AdjustTupletNumY(const Doc *doc, const Staff *staff);
-
-    /**
-     * Calculate corresponding cross-staff for the tuplet number if necessary. In case when tuplet is completely
-     * cross-staff nothing will be done, as tuplet number should share staff with tuplet in that case
-     */
-    void CalculateTupletNumCrossStaff(LayerElement *layerElement);
-
-    /**
-     * Check whether tuplet number has valid postioning staffwise
-     */
-    bool HasValidTupletNumPosition(const Staff *preferredStaff, const Staff *otherStaff) const;
-
+    //
 public:
     //
 private:

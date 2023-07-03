@@ -344,7 +344,10 @@ public:
     /**
      * Return duration of the beam part that is closest to the specified object X position
      */
+    ///@{
+    int GetBeamPartDuration(int x, bool includeRests = true) const;
     int GetBeamPartDuration(const Object *object, bool includeRests = true) const;
+    ///@}
 
     //----------//
     // Functors //
@@ -354,21 +357,11 @@ public:
      * Interface for class functor visitation
      */
     ///@{
-    FunctorCode Accept(MutableFunctor &functor) override;
+    FunctorCode Accept(Functor &functor) override;
     FunctorCode Accept(ConstFunctor &functor) const override;
-    FunctorCode AcceptEnd(MutableFunctor &functor) override;
+    FunctorCode AcceptEnd(Functor &functor) override;
     FunctorCode AcceptEnd(ConstFunctor &functor) const override;
     ///@}
-
-    /**
-     * See Object::AdjustBeams
-     */
-    int AdjustBeams(FunctorParams *functorParams) override;
-
-    /**
-     * See Object::AdjustBeamsEnd
-     */
-    int AdjustBeamsEnd(FunctorParams *functorParams) override;
 
 protected:
     /**
@@ -381,12 +374,6 @@ protected:
      * See LayerElement::SetElementShortening
      */
     void SetElementShortening(int shortening) override;
-
-    /**
-     * Return duration of beam part for specified X coordinate. Duration of two closest elements is taken for this
-     * purpose.
-     */
-    int GetBeamPartDuration(int x, bool includeRests = true) const;
 
 private:
     /**
@@ -458,7 +445,7 @@ public:
     /**
      * Update stem length based on the calculated coordinates and stemAdjust value
      */
-    void UpdateStemLength(StemmedDrawingInterface *stemmedInterface, int y1, int y2, int stemAdjust);
+    void UpdateStemLength(StemmedDrawingInterface *stemmedInterface, int y1, int y2, int stemAdjust, bool inMixedBeam);
 
     int m_x;
     int m_yBeam; // y value of stem top position

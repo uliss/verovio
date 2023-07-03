@@ -18,15 +18,12 @@
 //----------------------------------------------------------------------------
 
 #include "artic.h"
-#include "calcalignmentpitchposfunctor.h"
-#include "calcstemfunctor.h"
 #include "comparison.h"
 #include "doc.h"
 #include "editorial.h"
 #include "elementpart.h"
 #include "fermata.h"
 #include "functor.h"
-#include "functorparams.h"
 #include "gracegrp.h"
 #include "horizontalaligner.h"
 #include "layer.h"
@@ -74,6 +71,7 @@ Chord::Chord()
     , DrawingListInterface()
     , StemmedDrawingInterface()
     , DurationInterface()
+    , AttChordVis()
     , AttColor()
     , AttCue()
     , AttGraced()
@@ -83,6 +81,7 @@ Chord::Chord()
     , AttVisibility()
 {
     this->RegisterInterface(DurationInterface::GetAttClasses(), DurationInterface::IsInterface());
+    this->RegisterAttClass(ATT_CHORDVIS);
     this->RegisterAttClass(ATT_COLOR);
     this->RegisterAttClass(ATT_CUE);
     this->RegisterAttClass(ATT_GRACED);
@@ -96,7 +95,7 @@ Chord::Chord()
 
 Chord::~Chord()
 {
-    ClearClusters();
+    ClearNoteGroups();
 }
 
 void Chord::Reset()
@@ -105,6 +104,7 @@ void Chord::Reset()
     DrawingListInterface::Reset();
     StemmedDrawingInterface::Reset();
     DurationInterface::Reset();
+    this->ResetChordVis();
     this->ResetColor();
     this->ResetCue();
     this->ResetGraced();
@@ -113,24 +113,24 @@ void Chord::Reset()
     this->ResetTiePresent();
     this->ResetVisibility();
 
-    ClearClusters();
+    ClearNoteGroups();
 }
 
-void Chord::ClearClusters() const
+void Chord::ClearNoteGroups() const
 {
-    std::list<ChordCluster *>::iterator iter;
-    for (iter = m_clusters.begin(); iter != m_clusters.end(); ++iter) {
+    std::list<ChordNoteGroup *>::iterator iter;
+    for (iter = m_noteGroups.begin(); iter != m_noteGroups.end(); ++iter) {
         for (std::vector<Note *>::iterator clIter = (*iter)->begin(); clIter != (*iter)->end(); ++clIter) {
-            (*clIter)->SetCluster(NULL, 0);
+            (*clIter)->SetNoteGroup(NULL, 0);
         }
         delete *iter;
     }
-    m_clusters.clear();
+    m_noteGroups.clear();
 }
 
-void Chord::CalculateClusters()
+void Chord::CalculateNoteGroups()
 {
-    this->ClearClusters();
+    this->ClearNoteGroups();
 
     const ListOfObjects &childList = this->GetList(this);
     ListOfObjects::const_iterator iter = childList.begin();
@@ -138,7 +138,7 @@ void Chord::CalculateClusters()
     Note *curNote, *lastNote = vrv_cast<Note *>(*iter);
     assert(lastNote);
     int lastPitch = lastNote->GetDiatonicPitch();
-    ChordCluster *curCluster = NULL;
+    ChordNoteGroup *curGroup = NULL;
 
     ++iter;
 
@@ -151,15 +151,15 @@ void Chord::CalculateClusters()
         const int curPitch = curNote->GetDiatonicPitch();
 
         if ((curPitch - lastPitch < 2) && (curNote->GetCrossStaff(layer1) == lastNote->GetCrossStaff(layer2))) {
-            if (!lastNote->GetCluster()) {
-                curCluster = new ChordCluster();
-                m_clusters.push_back(curCluster);
-                curCluster->push_back(lastNote);
-                lastNote->SetCluster(curCluster, (int)curCluster->size());
+            if (!lastNote->GetNoteGroup()) {
+                curGroup = new ChordNoteGroup();
+                m_noteGroups.push_back(curGroup);
+                curGroup->push_back(lastNote);
+                lastNote->SetNoteGroup(curGroup, (int)curGroup->size());
             }
-            assert(curCluster);
-            curCluster->push_back(curNote);
-            curNote->SetCluster(curCluster, (int)curCluster->size());
+            assert(curGroup);
+            curGroup->push_back(curNote);
+            curNote->SetNoteGroup(curGroup, (int)curGroup->size());
         }
 
         lastNote = curNote;
@@ -488,6 +488,9 @@ int Chord::AdjustOverlappingLayers(const Doc *doc, const std::vector<LayerElemen
         if (((margin >= 0) && (overlap > margin)) || ((margin <= 0) && (overlap < margin))) {
             margin = overlap;
         }
+        else if ((margin < 0) && (m_noteGroups.size() > 0)) {
+            margin = overlap;
+        }
         if (isInUnison) ++actualElementsInUnison;
     }
 
@@ -542,7 +545,7 @@ std::list<const Note *> Chord::GetAdjacentNotesList(const Staff *staff, int loc)
 // Functors methods
 //----------------------------------------------------------------------------
 
-FunctorCode Chord::Accept(MutableFunctor &functor)
+FunctorCode Chord::Accept(Functor &functor)
 {
     return functor.VisitChord(this);
 }
@@ -552,7 +555,7 @@ FunctorCode Chord::Accept(ConstFunctor &functor) const
     return functor.VisitChord(this);
 }
 
-FunctorCode Chord::AcceptEnd(MutableFunctor &functor)
+FunctorCode Chord::AcceptEnd(Functor &functor)
 {
     return functor.VisitChordEnd(this);
 }
@@ -560,113 +563,6 @@ FunctorCode Chord::AcceptEnd(MutableFunctor &functor)
 FunctorCode Chord::AcceptEnd(ConstFunctor &functor) const
 {
     return functor.VisitChordEnd(this);
-}
-
-int Chord::AdjustCrossStaffYPos(FunctorParams *functorParams)
-{
-    FunctorDocParams *params = vrv_params_cast<FunctorDocParams *>(functorParams);
-    assert(params);
-
-    if (!this->HasCrossStaff()) return FUNCTOR_SIBLINGS;
-
-    // For cross staff chords we need to re-calculate the stem because the staff position might have changed
-    CalcAlignmentPitchPosFunctor calcAlignmentPitchPos(params->m_doc);
-    this->Process(calcAlignmentPitchPos);
-
-    CalcStemFunctor calcStem(params->m_doc);
-    this->Process(calcStem);
-
-    return FUNCTOR_SIBLINGS;
-}
-
-int Chord::ConvertMarkupAnalytical(FunctorParams *functorParams)
-{
-    ConvertMarkupAnalyticalParams *params = vrv_params_cast<ConvertMarkupAnalyticalParams *>(functorParams);
-    assert(params);
-
-    assert(!params->m_currentChord);
-    params->m_currentChord = this;
-
-    /****** fermata ******/
-
-    if (this->HasFermata()) {
-        Fermata *fermata = new Fermata();
-        fermata->ConvertFromAnalyticalMarkup(this, this->GetID(), params);
-    }
-
-    return FUNCTOR_CONTINUE;
-}
-
-int Chord::ConvertMarkupAnalyticalEnd(FunctorParams *functorParams)
-{
-    ConvertMarkupAnalyticalParams *params = vrv_params_cast<ConvertMarkupAnalyticalParams *>(functorParams);
-    assert(params);
-
-    if (params->m_permanent) {
-        this->ResetTiePresent();
-    }
-
-    assert(params->m_currentChord);
-    params->m_currentChord = NULL;
-
-    return FUNCTOR_CONTINUE;
-}
-
-int Chord::CalcArtic(FunctorParams *functorParams)
-{
-    CalcArticParams *params = vrv_params_cast<CalcArticParams *>(functorParams);
-    assert(params);
-
-    params->m_parent = this;
-    params->m_stemDir = this->GetDrawingStemDir();
-
-    Staff *staff = this->GetAncestorStaff();
-    Layer *layer = vrv_cast<Layer *>(this->GetFirstAncestor(LAYER));
-    assert(layer);
-
-    params->m_staffAbove = staff;
-    params->m_staffBelow = staff;
-    params->m_layerAbove = layer;
-    params->m_layerBelow = layer;
-    params->m_crossStaffAbove = false;
-    params->m_crossStaffBelow = false;
-
-    if (m_crossStaff) {
-        params->m_staffAbove = m_crossStaff;
-        params->m_staffBelow = m_crossStaff;
-        params->m_layerAbove = m_crossLayer;
-        params->m_layerBelow = m_crossLayer;
-        params->m_crossStaffAbove = true;
-        params->m_crossStaffBelow = true;
-    }
-    else {
-        this->GetCrossStaffExtremes(
-            params->m_staffAbove, params->m_staffBelow, &params->m_layerAbove, &params->m_layerBelow);
-        if (params->m_staffAbove) {
-            params->m_crossStaffAbove = true;
-            params->m_staffBelow = staff;
-            params->m_layerBelow = layer;
-        }
-        else if (params->m_staffBelow) {
-            params->m_crossStaffBelow = true;
-            params->m_staffAbove = staff;
-            params->m_layerAbove = layer;
-        }
-    }
-
-    return FUNCTOR_CONTINUE;
-}
-
-int Chord::AdjustArtic(FunctorParams *functorParams)
-{
-    AdjustArticParams *params = vrv_params_cast<AdjustArticParams *>(functorParams);
-    assert(params);
-
-    params->m_parent = this;
-    params->m_articAbove.clear();
-    params->m_articBelow.clear();
-
-    return FUNCTOR_CONTINUE;
 }
 
 MapOfNoteLocs Chord::CalcNoteLocations(NotePredicate predicate) const
@@ -702,113 +598,6 @@ MapOfDotLocs Chord::CalcDotLocations(int layerCount, bool primary) const
         }
     }
     return dotLocs;
-}
-
-int Chord::InitOnsetOffsetEnd(FunctorParams *functorParams)
-{
-    InitOnsetOffsetParams *params = vrv_params_cast<InitOnsetOffsetParams *>(functorParams);
-    assert(params);
-
-    LayerElement *element = this->ThisOrSameasLink();
-
-    double incrementScoreTime = element->GetAlignmentDuration(
-        params->m_currentMensur, params->m_currentMeterSig, true, params->m_notationType);
-    incrementScoreTime = incrementScoreTime / (DUR_MAX / DURATION_4);
-    double realTimeIncrementSeconds = incrementScoreTime * 60.0 / params->m_currentTempo;
-
-    params->m_currentScoreTime += incrementScoreTime;
-    params->m_currentRealTimeSeconds += realTimeIncrementSeconds;
-
-    return FUNCTOR_CONTINUE;
-}
-
-int Chord::JustifyYAdjustCrossStaff(FunctorParams *functorParams)
-{
-    JustifyYAdjustCrossStaffParams *params = vrv_params_cast<JustifyYAdjustCrossStaffParams *>(functorParams);
-    assert(params);
-
-    // Check if chord spreads across several staves
-    std::map<int, Staff *> extremalStaves;
-    for (Note *note : { this->GetTopNote(), this->GetBottomNote() }) {
-        Staff *staff = note->GetAncestorStaff(RESOLVE_CROSS_STAFF);
-        extremalStaves.insert({ staff->GetN(), staff });
-    }
-    // get chord parent staff
-    Staff *staff = this->GetAncestorStaff(RESOLVE_CROSS_STAFF);
-    extremalStaves.insert({ staff->GetN(), staff });
-
-    if (extremalStaves.size() < 2) return FUNCTOR_CONTINUE;
-
-    // Now calculate the shift due to vertical justification
-    auto getShift = [params](Staff *staff) {
-        StaffAlignment *alignment = staff->GetAlignment();
-        if (params->m_shiftForStaff.find(alignment) != params->m_shiftForStaff.end()) {
-            return params->m_shiftForStaff.at(alignment);
-        }
-        return 0;
-    };
-
-    const int shift = getShift(extremalStaves.rbegin()->second) - getShift(extremalStaves.begin()->second);
-
-    // Add the shift to the stem length of the chord
-    Stem *stem = vrv_cast<Stem *>(this->FindDescendantByType(STEM));
-    if (!stem) return FUNCTOR_CONTINUE;
-
-    const int stemLen = stem->GetDrawingStemLen();
-    if (stem->GetDrawingStemDir() == STEMDIRECTION_up) {
-        stem->SetDrawingStemLen(stemLen - shift);
-    }
-    else {
-        stem->SetDrawingStemLen(stemLen + shift);
-    }
-
-    // Reposition the stem
-    Staff *rootStaff = (stem->GetDrawingStemDir() == STEMDIRECTION_up) ? extremalStaves.rbegin()->second
-                                                                       : extremalStaves.begin()->second;
-    stem->SetDrawingYRel(stem->GetDrawingYRel() + getShift(staff) - getShift(rootStaff));
-
-    // Add the shift to the flag position
-    Flag *flag = vrv_cast<Flag *>(stem->FindDescendantByType(FLAG));
-    if (flag) {
-        const int sign = (stem->GetDrawingStemDir() == STEMDIRECTION_up) ? 1 : -1;
-        flag->SetDrawingYRel(flag->GetDrawingYRel() + sign * shift);
-    }
-
-    return FUNCTOR_CONTINUE;
-}
-
-int Chord::GenerateMIDI(FunctorParams *functorParams)
-{
-    GenerateMIDIParams *params = vrv_params_cast<GenerateMIDIParams *>(functorParams);
-    assert(params);
-
-    // Handle grace chords
-    if (this->IsGraceNote()) {
-        std::set<int> pitches;
-        const ListOfObjects &notes = this->GetList(this);
-        for (Object *obj : notes) {
-            Note *note = vrv_cast<Note *>(obj);
-            assert(note);
-            pitches.insert(note->GetMIDIPitch(params->m_transSemi));
-        }
-
-        double quarterDuration = 0.0;
-        const data_DURATION dur = this->GetDur();
-        if ((dur >= DURATION_long) && (dur <= DURATION_1024)) {
-            quarterDuration = pow(2.0, (DURATION_4 - dur));
-        }
-
-        params->m_graceNotes.push_back({ pitches, quarterDuration });
-
-        bool accented = (this->GetGrace() == GRACE_acc);
-        GraceGrp *graceGrp = vrv_cast<GraceGrp *>(this->GetFirstAncestor(GRACEGRP));
-        if (graceGrp && (graceGrp->GetGrace() == GRACE_acc)) accented = true;
-        params->m_accentedGraceNote = accented;
-
-        return FUNCTOR_SIBLINGS;
-    }
-
-    return FUNCTOR_CONTINUE;
 }
 
 } // namespace vrv

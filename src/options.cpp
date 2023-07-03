@@ -252,16 +252,13 @@ void OptionDbl::Init(double defaultValue, double minValue, double maxValue, bool
 
 bool OptionDbl::SetValue(const std::string &value)
 {
-    // Convert string to double
-    double number = 0.0;
-    try {
-        number = std::stod(value);
-    }
-    catch (const std::exception &e) {
+    if (!IsValidDouble(value)) {
         LogError("Unable to set parameter value %s for '%s'; conversion to double failed", value.c_str(),
             this->GetKey().c_str());
         return false;
     }
+    // Convert string to double
+    double number = std::strtod(value.c_str(), NULL);
 
     // Check bounds and set the value
     return this->SetValue(number);
@@ -340,16 +337,13 @@ bool OptionInt::SetValueDbl(double value)
 
 bool OptionInt::SetValue(const std::string &value)
 {
-    // Convert string to int
-    int number = 0;
-    try {
-        number = std::stoi(value);
-    }
-    catch (const std::exception &e) {
+    if (!IsValidInteger(value)) {
         LogError("Unable to set parameter value %s for '%s'; conversion to integer failed", value.c_str(),
             this->GetKey().c_str());
         return false;
     }
+    // Convert string to int
+    int number = (int)std::strtol(value.c_str(), NULL, 10);
 
     // Check bounds and set the value
     return this->SetValue(number);
@@ -842,19 +836,19 @@ OptionJson::JsonPath OptionJson::StringPath2NodePath(
     }
     path.reserve(jsonNodePath.size());
     path.push_back(const_cast<jsonxx::Value &>(obj.get<jsonxx::Value>(jsonNodePath.front())));
-    for (auto iter = jsonNodePath.begin() + 1; iter != jsonNodePath.end(); ++iter) {
+    for (const std::string &jsonNode : jsonNodePath) {
         jsonxx::Value &val = path.back();
-        if (val.is<jsonxx::Object>() && val.get<jsonxx::Object>().has<jsonxx::Value>(*iter)) {
-            path.push_back(val.get<jsonxx::Object>().get<jsonxx::Value>(*iter));
+        if (val.is<jsonxx::Object>() && val.get<jsonxx::Object>().has<jsonxx::Value>(jsonNode)) {
+            path.push_back(val.get<jsonxx::Object>().get<jsonxx::Value>(jsonNode));
         }
         else if (val.is<jsonxx::Array>()) {
-            try {
-                const int index = std::stoi(*iter);
+            if (IsValidInteger(jsonNode)) {
+                const int index = (int)std::strtol(jsonNode.c_str(), NULL, 10);
                 if (!val.get<jsonxx::Array>().has<jsonxx::Value>(index)) break;
 
                 path.push_back(val.get<jsonxx::Array>().get<jsonxx::Value>(index));
             }
-            catch (const std::logic_error &) {
+            else {
                 // invalid index, leaving
                 break;
             }
@@ -960,7 +954,8 @@ Options::Options()
     m_baseOptions.AddOption(&m_scale);
 
     m_outputTo.SetInfo("Output to",
-        "Select output format to: \"mei\", \"mei-pb\", \"mei-basic\", \"svg\", \"midi\", \"timemap\", \"humdrum\" or "
+        "Select output format to: \"mei\", \"mei-pb\", \"mei-basic\", \"svg\", \"midi\", \"timemap\", "
+        "\"expansionmap\", \"humdrum\" or "
         "\"pae\"");
     m_outputTo.Init("svg");
     m_outputTo.SetKey("outputTo");
@@ -1073,6 +1068,10 @@ Options::Options()
         "Move score definition (clef, keySig, meterSig, etc.) from scoreDef to staffDef");
     m_moveScoreDefinitionToStaff.Init(false);
     this->Register(&m_moveScoreDefinitionToStaff, "moveScoreDefinitionToStaff", &m_general);
+
+    m_neumeAsNote.SetInfo("Neume as note", "Render neumes as note heads instead of original notation");
+    m_neumeAsNote.Init(false);
+    this->Register(&m_neumeAsNote, "neumeAsNote", &m_general);
 
     m_noJustification.SetInfo("No justification", "Do not justify the system");
     m_noJustification.Init(false);
@@ -1364,10 +1363,6 @@ Options::Options()
     m_lyricElision.Init(ELISION_regular, &Option::s_elision);
     this->Register(&m_lyricElision, "lyricElision", &m_generalLayout);
 
-    m_lyricHyphenLength.SetInfo("Lyric hyphen length", "The lyric hyphen and dash length");
-    m_lyricHyphenLength.Init(1.20, 0.50, 3.00);
-    this->Register(&m_lyricHyphenLength, "lyricHyphenLength", &m_generalLayout);
-
     m_lyricLineThickness.SetInfo("Lyric line thickness", "The lyric extender line thickness");
     m_lyricLineThickness.Init(0.25, 0.10, 0.50);
     this->Register(&m_lyricLineThickness, "lyricLineThickness", &m_generalLayout);
@@ -1490,7 +1485,7 @@ Options::Options()
     this->Register(&m_spacingStaff, "spacingStaff", &m_generalLayout);
 
     m_spacingSystem.SetInfo("Spacing system", "The system minimal spacing in MEI units");
-    m_spacingSystem.Init(12, 0, 48);
+    m_spacingSystem.Init(4, 0, 48);
     this->Register(&m_spacingSystem, "spacingSystem", &m_generalLayout);
 
     m_staffLineWidth.SetInfo("Staff line width", "The staff line width in MEI units");
@@ -1509,7 +1504,7 @@ Options::Options()
     m_systemDivider.Init(SYSTEMDIVIDER_auto, &Option::s_systemDivider);
     this->Register(&m_systemDivider, "systemDivider", &m_generalLayout);
 
-    m_systemMaxPerPage.SetInfo("Max. System per Page", "Maximun number of systems per page");
+    m_systemMaxPerPage.SetInfo("Max. System per Page", "Maximum number of systems per page");
     m_systemMaxPerPage.Init(0, 0, 24);
     this->Register(&m_systemMaxPerPage, "systemMaxPerPage", &m_generalLayout);
 
@@ -1532,6 +1527,10 @@ Options::Options()
     m_tieMinLength.SetInfo("Tie minimum length", "The minimum length of tie in MEI units");
     m_tieMinLength.Init(2.0, 0.0, 10.0);
     this->Register(&m_tieMinLength, "tieMinLength", &m_generalLayout);
+
+    m_tupletAngledOnBeams.SetInfo("Tuplet angled on beams", "Tuplet brackets angled on beams only");
+    m_tupletAngledOnBeams.Init(false);
+    this->Register(&m_tupletAngledOnBeams, "tupletAngledOnBeams", &m_generalLayout);
 
     m_tupletBracketThickness.SetInfo("Tuplet bracket thickness", "The thickness of the tuplet bracket");
     m_tupletBracketThickness.Init(0.2, 0.1, 0.8);

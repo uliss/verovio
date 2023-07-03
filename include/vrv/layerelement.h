@@ -318,6 +318,12 @@ public:
      */
     MapOfDotLocs CalcOptimalDotLocations();
 
+    /**
+     * Calculate the overlap with other layer elements that
+     * are placed within the duration of the element
+     */
+    int CalcLayerOverlap(const Doc *doc, int direction, int y1, int y2);
+
     //----------//
     // Functors //
     //----------//
@@ -326,67 +332,11 @@ public:
      * Interface for class functor visitation
      */
     ///@{
-    FunctorCode Accept(MutableFunctor &functor) override;
+    FunctorCode Accept(Functor &functor) override;
     FunctorCode Accept(ConstFunctor &functor) const override;
-    FunctorCode AcceptEnd(MutableFunctor &functor) override;
+    FunctorCode AcceptEnd(Functor &functor) override;
     FunctorCode AcceptEnd(ConstFunctor &functor) const override;
     ///@}
-
-    /**
-     * See Object::AdjustBeams
-     */
-    int AdjustBeams(FunctorParams *functorParams) override;
-
-    /**
-     * See Object::ResetVerticalAlignment
-     */
-    int ResetVerticalAlignment(FunctorParams *functorParams) override;
-
-    /**
-     * See Object::ApplyPPUFactor
-     */
-    int ApplyPPUFactor(FunctorParams *functorParams) override;
-
-    /**
-     * See Object::AdjustTupletNumOverlap
-     */
-    int AdjustTupletNumOverlap(FunctorParams *functorParams) const override;
-
-    /**
-     * See Object::AdjustXRelForTranscription
-     */
-    int AdjustXRelForTranscription(FunctorParams *functorParams) override;
-
-    /**
-     * See Object::InitOnsetOffset
-     */
-    ///@{
-    int InitOnsetOffset(FunctorParams *functorParams) override;
-    ///@}
-
-    /**
-     * See Object::InitTimemapTies
-     */
-    ///@{
-    int InitTimemapTies(FunctorParams *functorParams) override;
-    ///@}
-
-    /**
-     * @name See Object::GenerateMIDI
-     */
-    ///@{
-    int GenerateMIDI(FunctorParams *functorParams) override;
-    ///@}
-
-    /**
-     * See Object::GenerateTimemap
-     */
-    int GenerateTimemap(FunctorParams *functorParams) override;
-
-    /**
-     * See Object::CalcMaxMeasureDuration
-     */
-    int InitMaxMeasureDuration(FunctorParams *functorParams) override;
 
 protected:
     /**
@@ -409,12 +359,6 @@ protected:
      * secondary
      */
     virtual MapOfDotLocs CalcDotLocations(int layerCount, bool primary) const { return {}; }
-
-    /**
-     * Helper function to calculate overlap with layer elements that
-     * are placed within the duration of element
-     */
-    int CalcLayerOverlap(const Doc *doc, int direction, int y1, int y2);
 
     //----------------//
     // Static methods //

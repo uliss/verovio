@@ -112,9 +112,16 @@ FunctorCode LayerElementsInTimeSpanFunctor::VisitLayerElement(const LayerElement
     if ((!m_allLayersButCurrent && (currentLayer != m_layer)) || (m_allLayersButCurrent && (currentLayer == m_layer))) {
         return FUNCTOR_SIBLINGS;
     }
-    if (!currentLayer || layerElement->IsScoreDefElement() || layerElement->Is(MREST)) return FUNCTOR_SIBLINGS;
-    if (!layerElement->GetDurationInterface() || layerElement->Is({ MSPACE, SPACE }) || layerElement->HasSameasLink())
+    if (!currentLayer || layerElement->IsScoreDefElement()) return FUNCTOR_SIBLINGS;
+
+    if (layerElement->HasSameasLink()) return FUNCTOR_CONTINUE;
+
+    if (layerElement->Is(MREST)) {
+        m_elements.push_back(layerElement);
         return FUNCTOR_CONTINUE;
+    }
+
+    if (!layerElement->GetDurationInterface() || layerElement->Is({ MSPACE, SPACE })) return FUNCTOR_CONTINUE;
 
     const double duration = !layerElement->GetFirstAncestor(CHORD)
         ? layerElement->GetAlignmentDuration(m_mensur, m_meterSig)
@@ -240,12 +247,10 @@ FunctorCode FindSpannedLayerElementsFunctor::VisitMeasure(const Measure *measure
 // GetRelativeLayerElementFunctor
 //----------------------------------------------------------------------------
 
-GetRelativeLayerElementFunctor::GetRelativeLayerElementFunctor(
-    int elementIndex, bool searchDirection, bool anotherLayer)
+GetRelativeLayerElementFunctor::GetRelativeLayerElementFunctor(int elementIndex, bool anotherLayer) : ConstFunctor()
 {
     m_relativeElement = NULL;
     m_initialElementIndex = elementIndex;
-    m_searchDirection = searchDirection;
     m_isInNeighboringLayer = anotherLayer;
 }
 
@@ -255,8 +260,12 @@ FunctorCode GetRelativeLayerElementFunctor::VisitLayerElement(const LayerElement
     // processed (e.g. ignore index children of beams, since they have their own indices irrelevant to the one that
     // has been passed inside this functor)
     if (!m_isInNeighboringLayer && layerElement->GetParent()->Is(LAYER)) {
-        if (m_searchDirection == FORWARD && (layerElement->GetIdx() < m_initialElementIndex)) return FUNCTOR_SIBLINGS;
-        if (m_searchDirection == BACKWARD && (layerElement->GetIdx() > m_initialElementIndex)) return FUNCTOR_SIBLINGS;
+        if ((this->GetDirection() == FORWARD) && (layerElement->GetIdx() < m_initialElementIndex)) {
+            return FUNCTOR_SIBLINGS;
+        }
+        if ((this->GetDirection() == BACKWARD) && (layerElement->GetIdx() > m_initialElementIndex)) {
+            return FUNCTOR_SIBLINGS;
+        }
     }
 
     if (layerElement->Is({ NOTE, CHORD, FTREM })) {

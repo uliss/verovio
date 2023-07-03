@@ -15,7 +15,6 @@
 
 #include "editorial.h"
 #include "functor.h"
-#include "functorparams.h"
 #include "measure.h"
 #include "scoredef.h"
 #include "section.h"
@@ -30,9 +29,17 @@ namespace vrv {
 
 static const ClassRegistrar<Ending> s_factory("ending", ENDING);
 
-Ending::Ending() : SystemElement(ENDING, "ending-"), SystemMilestoneInterface(), AttLineRend(), AttNNumberLike()
+Ending::Ending()
+    : SystemElement(ENDING, "ending-")
+    , SystemMilestoneInterface()
+    , AttLabelled()
+    , AttLineRend()
+    , AttLineRendBase()
+    , AttNNumberLike()
 {
+    this->RegisterAttClass(ATT_LABELLED);
     this->RegisterAttClass(ATT_LINEREND);
+    this->RegisterAttClass(ATT_LINERENDBASE);
     this->RegisterAttClass(ATT_NINTEGER);
 
     this->Reset();
@@ -44,7 +51,9 @@ void Ending::Reset()
 {
     SystemElement::Reset();
     SystemMilestoneInterface::Reset();
+    this->ResetLabelled();
     this->ResetLineRend();
+    this->ResetLineRendBase();
     this->ResetNNumberLike();
 }
 
@@ -76,7 +85,7 @@ bool Ending::IsSupportedChild(Object *child)
 // Ending functor methods
 //----------------------------------------------------------------------------
 
-FunctorCode Ending::Accept(MutableFunctor &functor)
+FunctorCode Ending::Accept(Functor &functor)
 {
     return functor.VisitEnding(this);
 }
@@ -86,7 +95,7 @@ FunctorCode Ending::Accept(ConstFunctor &functor) const
     return functor.VisitEnding(this);
 }
 
-FunctorCode Ending::AcceptEnd(MutableFunctor &functor)
+FunctorCode Ending::AcceptEnd(Functor &functor)
 {
     return functor.VisitEndingEnd(this);
 }
@@ -94,56 +103,6 @@ FunctorCode Ending::AcceptEnd(MutableFunctor &functor)
 FunctorCode Ending::AcceptEnd(ConstFunctor &functor) const
 {
     return functor.VisitEndingEnd(this);
-}
-
-int Ending::ConvertToPageBased(FunctorParams *functorParams)
-{
-    ConvertToPageBasedParams *params = vrv_params_cast<ConvertToPageBasedParams *>(functorParams);
-    assert(params);
-
-    assert(params->m_currentSystem);
-    this->MoveItselfTo(params->m_currentSystem);
-
-    return FUNCTOR_CONTINUE;
-}
-
-int Ending::ConvertToPageBasedEnd(FunctorParams *functorParams)
-{
-    ConvertToPageBasedParams *params = vrv_params_cast<ConvertToPageBasedParams *>(functorParams);
-    assert(params);
-
-    ConvertToPageBasedMilestone(this, params->m_currentSystem);
-
-    return FUNCTOR_CONTINUE;
-}
-
-int Ending::CastOffSystems(FunctorParams *functorParams)
-{
-    CastOffSystemsParams *params = vrv_params_cast<CastOffSystemsParams *>(functorParams);
-    assert(params);
-
-    // Since the functor returns FUNCTOR_SIBLINGS we should never go lower than the system children
-    assert(dynamic_cast<System *>(this->GetParent()));
-
-    // Special case where we use the Relinquish method.
-    // We want to move the measure to the currentSystem. However, we cannot use DetachChild
-    // from the content System because this screws up the iterator. Relinquish gives up
-    // the ownership of the Measure - the contentSystem will be deleted afterwards.
-    Ending *ending = dynamic_cast<Ending *>(params->m_contentSystem->Relinquish(this->GetIdx()));
-    // move as pending since we want it at the beginning of the system in case of system break coming
-    params->m_pendingElements.push_back(ending);
-
-    return FUNCTOR_SIBLINGS;
-}
-
-int Ending::CastOffEncoding(FunctorParams *functorParams)
-{
-    CastOffEncodingParams *params = vrv_params_cast<CastOffEncodingParams *>(functorParams);
-    assert(params);
-
-    MoveItselfTo(params->m_currentSystem);
-
-    return FUNCTOR_SIBLINGS;
 }
 
 } // namespace vrv

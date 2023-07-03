@@ -131,11 +131,12 @@ public:
     int CalcPitchPosYRel(const Doc *doc, int loc) const;
 
     /**
-     * Getter for the StaffAlignment
+     * Getter and setter for the StaffAlignment
      */
     ///@{
     StaffAlignment *GetAlignment() { return m_staffAlignment; }
     const StaffAlignment *GetAlignment() const { return m_staffAlignment; }
+    void SetAlignment(StaffAlignment *alignment) { m_staffAlignment = alignment; }
     ///@}
 
     /**
@@ -162,7 +163,7 @@ public:
     ///@}
 
     /**
-     * Used for calculating clustered information/dot position.
+     * Used for calculating note groups information/dot position.
      * The *Doc is the parent doc but passed as param in order to avoid look-up
      */
     bool IsOnStaffLine(int y, const Doc *doc) const;
@@ -188,53 +189,11 @@ public:
      * Interface for class functor visitation
      */
     ///@{
-    FunctorCode Accept(MutableFunctor &functor) override;
+    FunctorCode Accept(Functor &functor) override;
     FunctorCode Accept(ConstFunctor &functor) const override;
-    FunctorCode AcceptEnd(MutableFunctor &functor) override;
+    FunctorCode AcceptEnd(Functor &functor) override;
     FunctorCode AcceptEnd(ConstFunctor &functor) const override;
     ///@}
-
-    /**
-     * See Object::ConvertToCastOffMensural
-     */
-    int ConvertToCastOffMensural(FunctorParams *functorParams) override;
-
-    /**
-     * See Object::ResetVerticalAlignment
-     */
-    int ResetVerticalAlignment(FunctorParams *functorParams) override;
-
-    /**
-     * See Object::ApplyPPUFactor
-     */
-    int ApplyPPUFactor(FunctorParams *functorParams) override;
-
-    /**
-     * See Object::AlignVertically
-     */
-    int AlignVertically(FunctorParams *functorParams) override;
-
-    /**
-     * See Object::CastOffEncoding
-     */
-    int CastOffEncoding(FunctorParams *functorParams) override;
-
-    /**
-     * See Object::InitOnsetOffset
-     */
-    ///@{
-    int InitOnsetOffset(FunctorParams *functorParams) override;
-    ///@}
-
-    /**
-     * See Object::GenerateMIDI
-     */
-    int GenerateMIDI(FunctorParams *functorParams) override;
-
-    /**
-     * See Object::Transpose
-     */
-    int Transpose(FunctorParams *functorParams) override;
 
 private:
     /**
